@@ -1,0 +1,36 @@
+# Results, not source. The CLI writes generated rosters, reports and exports to
+# ../roster-output by default, which is outside this repository altogether; these
+# entries are a second line of defence for anything written in place by hand.
+roster-output/
+samples/
+out/
+*.roster.json
+*.instance.json
+sample-*.csv
+sample-*.json
+sample-*.txt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node, for the frontend to come
+node_modules/
+dist/
+.vite/
+npm-debug.log*
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
