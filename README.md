@@ -52,7 +52,21 @@ weekends ruled off at the right edge, a head count under every day, and
 underneath it every rule the engine had to give ground on — grouped by rule, worst
 first, with the penalty each one cost.
 
-Still to come: the rule questionnaire the admin fills in, and CSV export.
+Step four is the questionnaire. The page asks `GET /schema` what the engine
+understands and builds the form from the answer, so a rule type added to the
+engine appears in the page without the page being touched: 25 kinds grouped into
+seven families, each with its plain-English help and a worked example, and a field
+per parameter drawn from its declared kind — a number box, a yes/no pair, a
+dropdown of shifts or roles, or a row of day chips with the weekends marked. The
+admin picks who a rule applies to (everyone, named people, a role, a contract),
+whether it is unbreakable or a preference, and how much a preference is worth. Every
+add, edit and removal is put to `POST /validate` before it is kept, so a rule the
+engine would refuse never enters the month; the refusal appears next to the field
+in the engine's own words, and the register of rules and the feasibility check on
+step five stay in step with each other.
+
+Still to come: pasting rules as free prose into the questionnaire for review, and
+CSV export.
 
 ## Running it
 
@@ -71,7 +85,7 @@ The first command solves the built-in month and prints the roster grid, the
 per-person workload and the rule report. The second lists every rule type the
 engine understands. The third reads rules written as prose into draft rules, and
 takes them as arguments, from a file with `--file`, or on standard input. The
-fourth starts the API. The last runs the test suite — 388 tests, about a minute —
+fourth starts the API. The last runs the test suite — 395 tests, about a minute —
 and the `-t .` is required.
 
 With the server up, open <http://127.0.0.1:8000/> for the admin's page. It is one
@@ -102,6 +116,17 @@ than guessed at: a group that is not in the staff data, a staff number nobody
 has, a date outside the month, a daily hours cap that is really a shift length.
 A dozen refusals of this kind are covered by tests. The drafts are the admin's to
 accept, edit or drop — the structured rules stay the single source of truth.
+
+A rule that could never be satisfied is refused wherever it comes from — the
+questionnaire, prose, or a hand-written instance. Every parameter is held to the
+floor its own specification advertises, so a run of zero days or a negative rest
+period is turned away, and any rule with a floor and a ceiling is refused when the
+floor sits above the ceiling: "min 20 is above max 4, so no roster can satisfy it".
+The alternative is worse than an error message, because a contradiction like that
+solves as an unavoidable breach on every roster and the admin is left reading a
+report that blames the staff for a typo. Contradictions *between* rules are a
+different matter and are not treated this way: each one is satisfiable alone, so
+they are left to the feasibility check and the violation report.
 
 ## The API
 

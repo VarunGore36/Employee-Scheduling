@@ -324,6 +324,73 @@ class TestRuleSetCosting(unittest.TestCase):
             build(rule("r", "make_everyone_happy"), self.inst)
 
 
+class TestParameterGuards(unittest.TestCase):
+    """A typo the admin cannot see through must be refused, not silently rostered."""
+
+    def setUp(self):
+        self.inst = instance(days=14)
+
+    def refuses(self, rule_obj, wanted: str):
+        with self.assertRaises(ValueError) as caught:
+            build(rule_obj, self.inst)
+        self.assertIn(wanted, str(caught.exception))
+
+    def test_a_floor_above_a_ceiling_is_refused_in_every_range_rule(self):
+        self.refuses(rule("r", "total_shifts_range", min=20, max=4),
+                     "min 20 is above max 4")
+        self.refuses(rule("r", "total_hours_range", min_hours=100, max_hours=40),
+                     "min_hours 100 is above max_hours 40")
+        self.refuses(rule("r", "shift_type_count_range", shift="N", min=9, max=2),
+                     "min 9 is above max 2")
+        self.refuses(rule("r", "headcount_per_shift", shift="N", min=9, max=2),
+                     "min 9 is above max 2")
+        self.refuses(rule("r", "hours_per_window", min_hours=50, max_hours=48),
+                     "min_hours 50 is above max_hours 48")
+
+    def test_every_range_rule_declares_its_pairs(self):
+        """A range rule that forgets ``ranges`` would let the typo back in."""
+        for rtype, cls in REGISTRY.items():
+            names = {spec["name"] for spec in cls.params_spec}
+            for low, high in (("min", "max"), ("min_hours", "max_hours")):
+                if {low, high} <= names:
+                    self.assertIn((low, high), cls.ranges, rtype)
+
+    def test_equal_bounds_mean_exactly_that_many(self):
+        r = rule("r", "total_shifts_range", min=4, max=4)
+        self.assertEqual(self.worked(r, "MMMM.........."), 0)
+        self.assertEqual(self.worked(r, "MMMMM........."), 1)
+        self.assertEqual(self.worked(r, "MMM..........."), 1)
+
+    def worked(self, rule_obj, row: str) -> float:
+        state = lay_out(self.inst, {"A": row})
+        return amount(self.inst, rule_obj, state, "A")
+
+    def test_an_open_ceiling_leaves_the_floor_alone(self):
+        r = rule("r", "total_shifts_range", min=6)
+        self.assertEqual(build(r, self.inst).high, None)
+
+    def test_a_number_below_its_declared_floor_is_refused(self):
+        self.refuses(rule("r", "max_consecutive_working_days", max=0),
+                     "max is 0 but the least it may be is 1")
+        self.refuses(rule("r", "min_rest_hours", hours=-1),
+                     "hours is -1 but the least it may be is 0")
+        self.refuses(rule("r", "max_night_shifts", max=-2),
+                     "max is -2 but the least it may be is 0")
+        self.refuses(rule("r", "balance_workload", tolerance=-0.5),
+                     "tolerance is -0.5 but the least it may be is 0")
+
+    def test_a_number_that_is_not_a_number_is_refused(self):
+        self.refuses(rule("r", "max_night_shifts", max="lots"),
+                     "max must be a number")
+
+    def test_the_floor_check_only_reads_numeric_params(self):
+        """Shift ids and day lists are checked elsewhere, by name."""
+        every = [spec for cls in REGISTRY.values() for spec in cls.params_spec]
+        for spec in every:
+            if "minimum" in spec:
+                self.assertIn(spec["kind"], ("int", "float"), spec["name"])
+
+
 class TestScopedCosting(unittest.TestCase):
     def test_contract_scope(self):
         staff = [

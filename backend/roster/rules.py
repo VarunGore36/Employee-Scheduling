@@ -98,11 +98,13 @@ class RuleEvaluator:
     granularity: str = "cell"  # coverage rules only: cell (day,shift,role) or shift (day,shift)
     params_spec: list[dict] = []
     example: str = ""
+    ranges: tuple[tuple[str, str], ...] = ()  # param pairs where the first must not exceed the second
 
     def __init__(self, rule: Rule, inst: Instance) -> None:
         self.rule = rule
         self.inst = inst
         self.params = self._read_params(rule.params)
+        self._check_ranges()
         self.members: tuple[int, ...] = tuple(inst.scope_employees(rule))
         self.member_set = set(self.members)
         self.setup()
@@ -127,7 +129,42 @@ class RuleEvaluator:
         unknown = set(given) - {s["name"] for s in self.params_spec}
         if unknown:
             raise ValueError(f"rule {self.rule.id} ({self.type}) has unknown params {sorted(unknown)}")
+        self._check_floors(out)
         return out
+
+    def _check_floors(self, values: dict) -> None:
+        """Hold each number to the floor its spec declares."""
+        for spec in self.params_spec:
+            if "minimum" not in spec or spec["kind"] not in (INT, FLOAT):
+                continue
+            value = values.get(spec["name"])
+            if value is None:
+                continue
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"rule {self.rule.id} ({self.type}): {spec['name']} must be a number, "
+                    f"not {value!r}"
+                ) from None
+            if number < spec["minimum"]:
+                raise ValueError(
+                    f"rule {self.rule.id} ({self.type}): {spec['name']} is {number:g} but "
+                    f"the least it may be is {float(spec['minimum']):g}"
+                )
+
+    def _check_ranges(self) -> None:
+        """Refuse a range whose floor sits above its ceiling: nothing could satisfy it."""
+        for low_name, high_name in self.ranges:
+            low = self.params.get(low_name)
+            high = self.params.get(high_name)
+            if low is None or high is None:
+                continue
+            if float(low) > float(high):
+                raise ValueError(
+                    f"rule {self.rule.id} ({self.type}): {low_name} {float(low):g} is above "
+                    f"{high_name} {float(high):g}, so no roster can satisfy it"
+                )
 
     def row_amount(self, state: RosterState, e: int, stats: RowStats) -> float:
         return 0.0
@@ -473,6 +510,7 @@ class TotalShiftsRange(RuleEvaluator):
         param("min", INT, "Fewest shifts", default=0, minimum=0),
         param("max", INT, "Most shifts", default=None, minimum=0, required=False),
     ]
+    ranges = (("min", "max"),)
 
     def setup(self) -> None:
         self.low = int(self.params.get("min") or 0)
@@ -506,6 +544,7 @@ class TotalHoursRange(RuleEvaluator):
         param("min_hours", FLOAT, "Fewest hours", default=0, minimum=0),
         param("max_hours", FLOAT, "Most hours", default=None, minimum=0, required=False),
     ]
+    ranges = (("min_hours", "max_hours"),)
 
     def setup(self) -> None:
         self.low = float(self.params.get("min_hours") or 0)
@@ -532,6 +571,7 @@ class ShiftTypeCountRange(RuleEvaluator):
         param("min", INT, "Fewest", default=0, minimum=0),
         param("max", INT, "Most", default=None, minimum=0, required=False),
     ]
+    ranges = (("min", "max"),)
 
     def setup(self) -> None:
         self.s = self.inst.shift_index[self.params["shift"]]
@@ -696,17 +736,13 @@ class HoursPerWindow(_WindowRule):
         param("include_partial", BOOL, "Apply the ceiling to part-weeks too",
               default=True),
     ]
+    ranges = (("min_hours", "max_hours"),)
 
     def setup(self) -> None:
         super().setup()
         self.low = float(self.params.get("min_hours") or 0)
         high = self.params.get("max_hours")
         self.high = None if high is None else float(high)
-        if self.high is not None and self.low > self.high:
-            raise ValueError(
-                f"rule {self.rule.id} ({self.type}): min_hours {self.low:g} is above "
-                f"max_hours {self.high:g}"
-            )
 
     def _hours(self, stats) -> list[float]:
         minutes = (stats.minutes_per_week if self.mode == "calendar"
@@ -1081,6 +1117,7 @@ class HeadcountPerShift(RuleEvaluator):
         param("max", INT, "Most people", default=None, minimum=0, required=False),
         param("days", DAYS, "Days (blank = every day)", default=[], required=False),
     ]
+    ranges = (("min", "max"),)
 
     def setup(self) -> None:
         self.s = self.inst.shift_index[self.params["shift"]]

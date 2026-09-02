@@ -313,6 +313,116 @@ button.quiet:hover { border-color: var(--stamp); }
   max-width: 78ch;
 }
 .key .night { color: var(--stamp); }
+.slip {
+  border: 1px solid var(--ink);
+  border-left: 4px solid var(--stamp);
+  padding: 18px 20px 20px;
+  margin: 0 0 24px;
+  max-width: 760px;
+}
+.slip h3 {
+  font: 400 15px/1.2 var(--display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin: 0 0 6px;
+}
+.slip .note {
+  font: 12px/1.6 var(--mono);
+  color: var(--slate);
+  margin: 0 0 16px;
+  max-width: 64ch;
+}
+.slip .note b { color: var(--ink); font-weight: 400; }
+.slip .doing { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.doing { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 24px; }
+.field {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 4px 20px;
+  align-items: start;
+  padding: 9px 0;
+  border-top: 1px solid var(--rule);
+}
+.field > span {
+  font: 12px/1.5 var(--mono);
+  color: var(--slate);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.field > span i { font-style: normal; color: var(--stamp); }
+.field input, .field select {
+  font: 13px/1 var(--mono);
+  color: var(--ink);
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  padding: 8px 9px;
+  min-height: 34px;
+  width: 100%;
+  max-width: 340px;
+}
+.field select[multiple] { height: 148px; padding: 4px; }
+.picks { display: flex; flex-wrap: wrap; gap: 4px; }
+.pick {
+  font: 11px/1.3 var(--mono);
+  color: var(--slate);
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  padding: 5px 7px;
+  min-width: 32px;
+  text-align: center;
+  cursor: pointer;
+}
+.pick input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.pick i { font-style: normal; display: block; font-size: 9px; letter-spacing: 0.06em; }
+.pick.rest { color: var(--red); }
+.pick.on, .pick.on.rest {
+  color: var(--sheet);
+  background: var(--stamp);
+  border-color: var(--stamp);
+}
+.pick:focus-within { outline: 2px solid var(--ink); outline-offset: 1px; }
+.chip {
+  display: inline-block;
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 6px;
+  border: 1px solid var(--rule);
+  color: var(--slate);
+}
+.chip.hard { color: var(--sheet); background: var(--ink); border-color: var(--ink); }
+.warn {
+  font: 12px/1.6 var(--mono);
+  color: var(--red);
+  border-left: 3px solid var(--red);
+  padding: 5px 0 5px 12px;
+  margin: 0 0 18px;
+  max-width: 64ch;
+}
+.entries {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  max-width: 900px;
+}
+.entries li {
+  display: grid;
+  grid-template-columns: 62px 1fr max-content;
+  gap: 4px 16px;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.entries p { margin: 0; }
+.entries .says {
+  display: block;
+  font: 12px/1.6 var(--mono);
+  color: var(--slate);
+  margin-top: 2px;
+}
+.entries .doing { margin: 0; gap: 6px; }
+.entries li[data-on="true"] { background: rgba(91, 63, 168, 0.07); }
 @media (max-width: 760px) {
   .register { grid-template-columns: 1fr; }
   .stub {
@@ -333,6 +443,8 @@ button.quiet:hover { border-color: var(--stamp); }
   .masthead h1 { font-size: 26px; }
   .wire { text-align: left; }
   .sheet { padding: 20px 18px 28px; }
+  .field { grid-template-columns: 1fr; }
+  .entries li { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
@@ -381,7 +493,9 @@ button.quiet:hover { border-color: var(--stamp); }
     <section id="s-rules" hidden aria-labelledby="h-rules">
       <h2 id="h-rules">Rules</h2>
       <p class="lede">Hard rules must hold for a roster to be legal. Soft rules
-        are preferences and fairness goals, traded against each other by weight.</p>
+        are preferences and fairness goals, traded against each other by weight.
+        Add, edit or drop them here — the engine is asked to accept every change
+        before it is kept.</p>
       <div data-fill="rules"></div>
     </section>
 
@@ -416,6 +530,7 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
 const base = location.protocol.startsWith("http") ? "" : "http://127.0.0.1:8000";
 const token = new URLSearchParams(location.search).get("token") || "";
 const state = { instance: null, health: null, check: null, solved: null,
+                schema: null, draft: null, dropped: null, dirty: false,
                 seconds: 30, seed: 0, busy: false, step: "period" };
 const at = id => document.getElementById(id);
 const panel = name => document.querySelector('[data-fill="' + name + '"]');
@@ -500,10 +615,10 @@ function num(value) {
   return value % 1 ? value.toFixed(1) : String(value);
 }
 
-function press(label, action, quiet, off) {
+function press(label, action, quiet, off, id) {
   return '<button class="' + (quiet ? "quiet" : "act") + '" type="button" ' +
-         'data-do="' + action + '"' + (off ? " disabled" : "") + ">" +
-         esc(label) + "</button>";
+         'data-do="' + action + '"' + (id ? ' data-id="' + esc(id) + '"' : "") +
+         (off ? " disabled" : "") + ">" + esc(label) + "</button>";
 }
 
 function nothingYet(message, label, action) {
@@ -643,17 +758,355 @@ function grid(out) {
     "d duties, h hours, n nights, w weekends worked · " +
     "hover a cell for the post and the date</p>";
 }
+const FAMILIES = [
+  ["Cover the posts", ["coverage", "headcount_per_shift", "fixed_assignment"]],
+  ["Hours and rest", ["hours_per_window", "total_hours_range", "min_rest_hours",
+                      "max_working_days_per_window", "min_days_off_per_window"]],
+  ["Runs of work and rest", ["max_consecutive_working_days",
+                             "min_consecutive_working_days",
+                             "min_consecutive_days_off", "max_consecutive_days_off"]],
+  ["Nights and shift patterns", ["max_night_shifts", "max_consecutive_same_shift",
+                                 "forbidden_shift_sequence", "shift_type_count_range"]],
+  ["Weekends", ["max_weekends_worked", "complete_weekends"]],
+  ["Fair shares", ["balance_workload", "total_shifts_range"]],
+  ["What people ask for", ["day_off_request", "shift_off_request", "shift_request",
+                           "shift_preference", "unavailable"]]
+];
+
+function typeCard(type) {
+  const kinds = (state.schema && state.schema.rule_types) || [];
+  return kinds.filter(card => card.type === type)[0] || null;
+}
+
+function families() {
+  const kinds = (state.schema && state.schema.rule_types) || [];
+  const left = {};
+  kinds.forEach(card => { left[card.type] = card; });
+  const out = [];
+  FAMILIES.forEach(family => {
+    const held = family[1].filter(type => left[type]).map(type => {
+      const card = left[type];
+      delete left[type];
+      return card;
+    });
+    if (held.length) out.push([family[0], held]);
+  });
+  const rest = Object.keys(left).map(type => left[type]);
+  if (rest.length) out.push(["Other rules", rest]);
+  return out;
+}
+
+function dates(inst) {
+  const all = [];
+  for (let day = 0; day < inst.horizon.num_days; day += 1) {
+    all.push(addDays(inst.horizon.start, day));
+  }
+  return all;
+}
+
+function contracts(inst) {
+  const seen = {};
+  inst.employees.forEach(person => {
+    if (person.contract) seen[person.contract] = true;
+  });
+  return Object.keys(seen).sort();
+}
+
+function scopeWords(scope) {
+  if (!scope || scope.kind === "all" || !scope.ids || !scope.ids.length) {
+    return "everyone";
+  }
+  const ids = scope.ids.join(", ");
+  if (scope.kind === "employees") return ids;
+  if (scope.kind === "roles") return "anyone holding " + ids;
+  return ids + " staff";
+}
+
+function shortDate(iso) {
+  const day = isoDate(iso);
+  return day.getDate() + " " + MONTHS[day.getMonth()].slice(0, 3);
+}
+
+function dayRuns(list) {
+  const runs = [];
+  list.slice().sort().forEach(iso => {
+    const last = runs[runs.length - 1];
+    if (last && addDays(last[1], 1) === iso) last[1] = iso;
+    else runs.push([iso, iso]);
+  });
+  return runs.map(run => run[0] === run[1] ? shortDate(run[0])
+                  : shortDate(run[0]) + " to " + shortDate(run[1])).join(", ");
+}
+
+function blank(value) {
+  if (Array.isArray(value)) return !value.length;
+  return value === "" || value === null || value === undefined;
+}
+
+function shiftName(id) {
+  const inst = state.instance;
+  const found = inst ? inst.shifts.filter(shift => shift.id === id) : [];
+  return found.length ? (found[0].name || found[0].id) : id;
+}
+
+function valueWords(kind, value) {
+  if (kind === "days") return dayRuns(value);
+  if (kind === "day") return shortDate(value);
+  if (kind === "shifts") return value.map(shiftName).join(" then ");
+  if (kind === "shift") return shiftName(value);
+  if (kind === "bool") return value ? "yes" : "no";
+  return String(value);
+}
+
+function paramWords(rule) {
+  const card = typeCard(rule.type);
+  const params = rule.params || {};
+  const said = card
+    ? card.params.filter(param => !blank(params[param.name])).map(param =>
+        param.label.replace(/ *\(.*\)$/, "") + " " +
+        valueWords(param.kind, params[param.name]))
+    : Object.keys(params).map(name => name + " " + params[name]);
+  return said.join(" · ");
+}
+
+function fieldRow(label, required, control) {
+  return '<div class="field"><span>' + esc(label) +
+    (required ? "<i> required</i>" : "") + "</span>" + control + "</div>";
+}
+
+function selectOf(label, set, name, chosen, options, empty) {
+  const head = empty === undefined ? ""
+    : '<option value=""' + (blank(chosen) ? " selected" : "") + ">" +
+      esc(empty) + "</option>";
+  return '<select aria-label="' + esc(label) + '" data-set="' + set + '"' +
+    (name ? ' data-name="' + esc(name) + '"' : "") + ">" + head +
+    options.map(option => '<option value="' + esc(option[0]) + '"' +
+      (String(option[0]) === String(chosen) ? " selected" : "") + ">" +
+      esc(option[1]) + "</option>").join("") + "</select>";
+}
+
+function numberField(label, set, name, value, step, least) {
+  return '<input type="number" aria-label="' + esc(label) + '" data-set="' + set +
+    '"' + (name ? ' data-name="' + esc(name) + '"' : "") +
+    ' step="' + step + '"' + (least === undefined ? "" : ' min="' + least + '"') +
+    ' value="' + esc(blank(value) ? "" : value) + '">';
+}
+
+function picksOf(label, name, chosen, options) {
+  const on = {};
+  (chosen || []).forEach(value => { on[value] = true; });
+  return '<div class="picks" role="group" aria-label="' + esc(label) + '">' +
+    options.map(option => '<label class="pick' + (on[option[0]] ? " on" : "") +
+      (option[2] ? " rest" : "") + '"><input type="checkbox" data-set="pick" ' +
+      'data-name="' + esc(name) + '" value="' + esc(option[0]) + '"' +
+      (on[option[0]] ? " checked" : "") + ">" + esc(option[1]) +
+      (option[3] ? "<i>" + esc(option[3]) + "</i>" : "") + "</label>").join("") +
+    "</div>";
+}
+
+function dayPicks(inst) {
+  const isRest = restDays(inst);
+  return dates(inst).map(iso => [iso, String(isoDate(iso).getDate()), isRest(iso),
+                                 DAYS[(isoDate(iso).getDay() + 6) % 7].slice(0, 1)]);
+}
+
+function shiftPicks(inst) {
+  return inst.shifts.map(shift => [shift.id, shift.id, false, shift.name || ""]);
+}
+
+function textField(label, set, value, hint) {
+  return '<input type="text" aria-label="' + esc(label) + '" data-set="' + set +
+    '" value="' + esc(value || "") + '" placeholder="' + esc(hint || "") + '">';
+}
+
+function multiOf(label, options, chosen) {
+  const on = {};
+  (chosen || []).forEach(value => { on[value] = true; });
+  return '<select multiple aria-label="' + esc(label) + '" data-set="scope-ids">' +
+    options.map(option => '<option value="' + esc(option[0]) + '"' +
+      (on[option[0]] ? " selected" : "") + ">" + esc(option[1]) +
+      "</option>").join("") + "</select>";
+}
+
+function paramField(param) {
+  const inst = state.instance;
+  const value = state.draft.params[param.name];
+  const label = param.label;
+  const spare = param.required ? undefined : "any";
+  let control;
+  if (param.kind === "bool") {
+    control = '<div class="picks" role="group" aria-label="' + esc(label) +
+      '"><label class="pick' + (value ? " on" : "") +
+      '"><input type="checkbox" data-set="flag" data-name="' + esc(param.name) +
+      '" aria-label="' + esc(label) + '"' + (value ? " checked" : "") + ">" +
+      (value ? "yes" : "no") + "</label></div>";
+  } else if (param.kind === "choice") {
+    control = selectOf(label, "param", param.name, value,
+                       param.options.map(option => [option, option]), spare);
+  } else if (param.kind === "shift") {
+    control = selectOf(label, "param", param.name, value,
+      inst.shifts.map(shift => [shift.id, shift.id + " · " + (shift.name || shift.id)]),
+      spare);
+  } else if (param.kind === "role") {
+    control = selectOf(label, "param", param.name, value,
+      inst.roles.map(role => [role.id, role.id + " · " + (role.name || role.id)]),
+      spare);
+  } else if (param.kind === "day") {
+    control = selectOf(label, "param", param.name, value,
+      dates(inst).map(iso => [iso, longDate(iso)]), spare);
+  } else if (param.kind === "days") {
+    control = picksOf(label, param.name, value, dayPicks(inst));
+  } else if (param.kind === "shifts") {
+    control = picksOf(label, param.name, value, shiftPicks(inst));
+  } else {
+    control = numberField(label, "param", param.name, value,
+                          param.kind === "float" ? "0.5" : "1", param.minimum);
+  }
+  return fieldRow(label, param.required, control);
+}
+
+const SCOPES = [["all", "everyone"], ["employees", "named people"],
+                ["roles", "everyone holding a role"],
+                ["contracts", "a kind of contract"]];
+
+function scopeChoices(inst, kind) {
+  if (kind === "employees") {
+    return inst.employees.map(person =>
+      [person.id, person.id + " · " + (person.name || person.id)]);
+  }
+  if (kind === "roles") {
+    return inst.roles.map(role => [role.id, role.id + " · " + (role.name || role.id)]);
+  }
+  if (kind === "contracts") return contracts(inst).map(name => [name, name]);
+  return [];
+}
+
+function catalogue(chosen) {
+  return '<select aria-label="Kind of rule" data-set="type">' +
+    families().map(family => '<optgroup label="' + esc(family[0]) + '">' +
+      family[1].map(card => '<option value="' + esc(card.type) + '"' +
+        (card.type === chosen ? " selected" : "") + ">" + esc(card.label) +
+        "</option>").join("") + "</optgroup>").join("") + "</select>";
+}
+
+function slip() {
+  const draft = state.draft;
+  const inst = state.instance;
+  const card = typeCard(draft.type);
+  const ids = scopeChoices(inst, draft.scope.kind);
+  return '<div class="slip"><h3>' +
+    (draft.editing ? "Edit this rule" : "Add a rule") + "</h3>" +
+    (card ? '<p class="note"><b>' + esc(card.help) + "</b> " +
+            esc(card.example) + "</p>" : "") +
+    (draft.error ? '<p class="warn">' + esc(draft.error) + "</p>" : "") +
+    fieldRow("Kind of rule", true, catalogue(draft.type)) +
+    (card ? card.params.map(paramField).join("") : "") +
+    fieldRow("Applies to", true,
+             selectOf("Applies to", "scope-kind", "", draft.scope.kind, SCOPES)) +
+    (ids.length ? fieldRow("Which of them", true,
+                           multiOf("Which of them", ids, draft.scope.ids)) : "") +
+    fieldRow("Severity", true, selectOf("Severity", "severity", "", draft.severity,
+      [["hard", "hard · must hold"], ["soft", "soft · a preference"]])) +
+    (draft.severity === "soft"
+      ? fieldRow("Weight against other soft rules", false,
+                 numberField("Weight", "weight", "", draft.weight, "0.5", 0)) : "") +
+    fieldRow("How it should read in the report", false,
+             textField("How it should read in the report", "label", draft.label,
+                       autoLabel(draft))) +
+    '<div class="doing">' +
+    press(draft.editing ? "Save the rule" : "Add the rule", "save-rule", false,
+          state.busy) +
+    press("Cancel", "cancel-rule", true) + "</div></div>";
+}
+
+function autoLabel(draft) {
+  const card = typeCard(draft.type);
+  const head = card ? card.label : draft.type;
+  const who = scopeWords(draft.scope);
+  return who === "everyone" ? head : head + " — " + who;
+}
+
+function defaultFor(param) {
+  if (param.kind === "days" || param.kind === "shifts") {
+    return Array.isArray(param.default) ? param.default.slice() : [];
+  }
+  if (param.default === undefined || param.default === null) {
+    return param.kind === "bool" ? false : "";
+  }
+  return param.default;
+}
+
+function blankDraft(type) {
+  const card = typeCard(type);
+  const params = {};
+  (card ? card.params : []).forEach(param => {
+    params[param.name] = defaultFor(param);
+  });
+  return { type: type, severity: card ? card.default_severity : "soft",
+           weight: 3, label: "", scope: { kind: "all", ids: [] },
+           params: params, editing: null, error: "" };
+}
+
+function freshId(type) {
+  const taken = {};
+  state.instance.rules.forEach(rule => { taken[rule.id] = true; });
+  if (!taken[type]) return type;
+  let next = 2;
+  while (taken[type + "_" + next]) next += 1;
+  return type + "_" + next;
+}
+
+function tidyParams(card, params) {
+  const out = {};
+  (card ? card.params : []).forEach(param => {
+    const value = params[param.name];
+    if (blank(value)) return;
+    if (param.kind === "int") out[param.name] = parseInt(value, 10);
+    else if (param.kind === "float") out[param.name] = parseFloat(value);
+    else if (param.kind === "bool") out[param.name] = Boolean(value);
+    else out[param.name] = Array.isArray(value) ? value.slice() : value;
+  });
+  return out;
+}
+
+function entries(rules) {
+  if (!rules.length) {
+    return '<p class="key">No rules at all — the engine would fill the grid and ' +
+      "call anything legal.</p>";
+  }
+  return '<ul class="entries">' + rules.map(rule => {
+    const editing = Boolean(state.draft) && state.draft.editing === rule.id;
+    const words = paramWords(rule);
+    return '<li data-on="' + editing + '"><p><span class="chip' +
+      (rule.severity === "hard" ? " hard" : "") + '">' + esc(rule.severity) +
+      "</span></p><p>" + esc(rule.label) + '<span class="says">' +
+      esc(scopeWords(rule.scope)) + (words ? " · " + esc(words) : "") +
+      (rule.severity === "soft" ? " · weight " + esc(rule.weight) : "") +
+      " · " + esc(rule.id) + "</span></p><p class=\"doing\">" +
+      press("Edit", "edit-rule", true, state.busy, rule.id) +
+      press("Drop", "drop-rule", true, state.busy, rule.id) + "</p></li>";
+  }).join("") + "</ul>";
+}
+
 function rulesPanel() {
   const inst = state.instance;
   if (!inst) return nothingYet("The rules arrive with the month.", OPEN_IT, "sample");
   const hard = inst.rules.filter(rule => rule.severity === "hard");
-  const kinds = new Set(inst.rules.map(rule => rule.type));
+  const kinds = {};
+  inst.rules.forEach(rule => { kinds[rule.type] = true; });
   return tally([["hard rules", hard.length],
                 ["soft rules", inst.rules.length - hard.length],
-                ["kinds of rule in play", kinds.size]]) +
-    ledger(inst.rules.map(rule =>
-      [rule.severity, rule.label +
-        (rule.severity === "soft" ? " · weight " + rule.weight : "")]));
+                ["kinds of rule in play", Object.keys(kinds).length],
+                ["kinds the engine knows",
+                 (state.schema && state.schema.rule_type_count) || "—"]]) +
+    (state.schema ? "" : '<p class="warn">The rule catalogue could not be read ' +
+      "from the engine, so nothing can be added until it answers again.</p>") +
+    (state.draft ? slip() : '<div class="doing">' +
+      press("Add a rule", "add-rule", false, state.busy || !state.schema) +
+      (state.dropped
+        ? press("Put back: " + state.dropped.label, "undrop", true, state.busy)
+        : "") + "</div>") +
+    entries(inst.rules);
 }
 
 function checkPanel() {
@@ -726,7 +1179,9 @@ function rosterPanel() {
             state.busy) + "</div>";
   }
   const score = out.score;
-  return tally([[score.feasible ? "legal roster" : "not a legal roster",
+  return (state.dirty ? '<p class="warn">The rule set has changed since this ' +
+      "roster was generated — generate it again.</p>" : "") +
+    tally([[score.feasible ? "legal roster" : "not a legal roster",
                  score.feasible ? "Yes" : "No"],
                 ["hard breaches", score.hard_violations],
                 ["soft penalty", num(score.cost)],
@@ -752,9 +1207,17 @@ function rosterPanel() {
 const PANELS = { period: periodPanel, staff: staffPanel, shifts: shiftsPanel,
                  rules: rulesPanel, check: checkPanel, roster: rosterPanel };
 
+function heldBy(node) {
+  if (!node || !node.dataset) return "";
+  if (node.dataset.do) return 'button[data-do="' + node.dataset.do + '"]';
+  if (!node.dataset.set) return "";
+  return '[data-set="' + node.dataset.set + '"]' +
+    (node.dataset.name ? '[data-name="' + node.dataset.name + '"]' : "") +
+    (node.dataset.set === "pick" ? '[value="' + node.value + '"]' : "");
+}
+
 function render() {
-  const had = document.activeElement;
-  const held = had && had.dataset ? had.dataset.do : "";
+  const held = heldBy(document.activeElement);
   Object.keys(PANELS).forEach(name => {
     panel(name).innerHTML = PANELS[name]();
     at("s-" + name).hidden = name !== state.step;
@@ -764,9 +1227,12 @@ function render() {
     button.setAttribute("aria-current", String(button.dataset.go === state.step));
   });
   if (held) {
-    const again = at("s-" + state.step)
-      .querySelector('button[data-do="' + held + '"]');
-    if (again) again.focus();
+    try {
+      const again = at("s-" + state.step).querySelector(held);
+      if (again) again.focus();
+    } catch (err) {
+      return;
+    }
   }
 }
 
@@ -787,9 +1253,18 @@ async function checkEngine() {
       (health.authenticated ? "token required" : "no token, loopback only");
   } catch (err) {
     state.health = null;
+    state.schema = null;
     at("lamp").dataset.state = "down";
     at("wire").textContent = err.message;
+    render();
+    return;
   }
+  try {
+    state.schema = await api("/schema");
+  } catch (err) {
+    state.schema = null;
+  }
+  render();
 }
 
 async function loadSample() {
@@ -799,6 +1274,9 @@ async function loadSample() {
     state.instance = out.instance;
     state.check = null;
     state.solved = null;
+    state.draft = null;
+    state.dropped = null;
+    state.dirty = false;
     render();
     say(state.instance.employees.length + " staff over " +
         state.instance.horizon.num_days + " days.",
@@ -842,6 +1320,7 @@ async function runSolve() {
       options: { seed: state.seed, max_seconds: state.seconds }
     });
     state.solved = out;
+    state.dirty = false;
     render();
     const score = out.score;
     say(score.feasible ? "A legal roster." : "No legal roster yet.",
@@ -858,24 +1337,178 @@ async function runSolve() {
   }
 }
 
+function plainly(err) {
+  let why = String(err.message || err).replace(/ \(instance[^)]*\)$/, "");
+  why = why.replace(/^rule rejected: /, "");
+  if (state.draft) {
+    // the slip already says which rule this is, so drop the engine's own preamble
+    why = why.replace(new RegExp("^rule \\S+ \\(" + state.draft.type + "\\): "), "");
+  }
+  return why;
+}
+
+async function commit(rules, told) {
+  const trial = Object.assign({}, state.instance, { rules: rules });
+  state.busy = true;
+  render();
+  try {
+    const out = await api("/validate", { instance: trial });
+    state.instance = trial;
+    state.check = out;
+    state.draft = null;
+    state.dirty = Boolean(state.solved);
+    say(told, out.ok ? rules.length + " rules now, and the month still works."
+                     : out.problems.length + " problem(s) — see step 5.",
+        out.ok ? "" : "bad");
+    return true;
+  } catch (err) {
+    if (state.draft) state.draft.error = plainly(err);
+    say("The engine would not take that.", plainly(err), "bad");
+    return false;
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+function startDraft() {
+  const first = families()[0];
+  if (!first) return;
+  state.draft = blankDraft(first[1][0].type);
+  render();
+}
+
+function editRule(id) {
+  const found = state.instance.rules.filter(rule => rule.id === id)[0];
+  if (!found) return;
+  const draft = blankDraft(found.type);
+  draft.editing = id;
+  draft.severity = found.severity;
+  draft.weight = found.weight;
+  draft.label = found.label || "";
+  draft.scope = { kind: (found.scope && found.scope.kind) || "all",
+                  ids: ((found.scope && found.scope.ids) || []).slice() };
+  Object.keys(found.params || {}).forEach(name => {
+    const value = found.params[name];
+    draft.params[name] = Array.isArray(value) ? value.slice() : value;
+  });
+  state.draft = draft;
+  render();
+}
+
+async function saveRule() {
+  const draft = state.draft;
+  if (!draft || state.busy) return;
+  const card = typeCard(draft.type);
+  const missing = (card ? card.params : []).filter(param =>
+    param.required && blank(draft.params[param.name]));
+  if (missing.length) {
+    draft.error = "Still to fill in: " +
+      missing.map(param => param.label.replace(/ *\(.*\)$/, "")).join(", ") + ".";
+    render();
+    return;
+  }
+  if (draft.scope.kind !== "all" && !draft.scope.ids.length) {
+    draft.error = "Choose who this applies to, or set it back to everyone.";
+    render();
+    return;
+  }
+  const rule = {
+    id: draft.editing || freshId(draft.type),
+    type: draft.type,
+    severity: draft.severity,
+    weight: draft.severity === "hard" ? 1 : (Number(draft.weight) || 1),
+    scope: { kind: draft.scope.kind, ids: draft.scope.ids.slice() },
+    params: tidyParams(card, draft.params),
+    label: (draft.label || "").trim() || autoLabel(draft)
+  };
+  const rules = state.instance.rules.slice();
+  const found = rules.map(one => one.id).indexOf(rule.id);
+  if (found >= 0) rules[found] = rule; else rules.push(rule);
+  draft.error = "";
+  await commit(rules, (found >= 0 ? "Saved: " : "Added: ") + rule.label);
+}
+
+async function dropRule(id) {
+  const gone = state.instance.rules.filter(rule => rule.id === id)[0];
+  if (!gone || state.busy) return;
+  const kept = state.instance.rules.filter(rule => rule.id !== id);
+  if (await commit(kept, "Dropped: " + gone.label)) {
+    state.dropped = gone;
+    render();
+  }
+}
+
+async function undrop() {
+  const back = state.dropped;
+  if (!back || state.busy) return;
+  state.dropped = null;
+  if (!await commit(state.instance.rules.concat([back]), "Put back: " + back.label)) {
+    state.dropped = back;
+  }
+  render();
+}
+
 at("stub").addEventListener("click", event => {
   const button = event.target.closest("button[data-go]");
   if (button && !button.disabled) goTo(button.dataset.go);
 });
 
+function setField(what, value, name, on) {
+  if (what === "seconds") {
+    state.seconds = Number(value);
+    return false;
+  }
+  const draft = state.draft;
+  if (!draft) return false;
+  if (what === "type") {
+    const kept = draft.editing;
+    state.draft = blankDraft(value);
+    state.draft.editing = kept;
+    return true;
+  }
+  if (what === "severity") { draft.severity = value; return true; }
+  if (what === "weight") { draft.weight = value; return false; }
+  if (what === "label") { draft.label = value; return false; }
+  if (what === "scope-kind") {
+    draft.scope = { kind: value, ids: [] };
+    return true;
+  }
+  if (what === "scope-ids") { draft.scope.ids = value; return false; }
+  if (what === "flag") { draft.params[name] = Boolean(on); return true; }
+  if (what === "param") { draft.params[name] = value; return false; }
+  if (what === "pick") {
+    const held = draft.params[name] || [];
+    draft.params[name] = on ? held.concat([value]).sort()
+                            : held.filter(one => one !== value);
+    return true;
+  }
+  return false;
+}
+
 document.querySelector(".sheet").addEventListener("change", event => {
   const field = event.target.closest("[data-set]");
-  if (field && field.dataset.set === "seconds") {
-    state.seconds = Number(field.value);
-  }
+  if (!field) return;
+  const many = field.dataset.set === "scope-ids";
+  const value = many
+    ? Array.prototype.slice.call(field.selectedOptions || []).map(one => one.value)
+    : field.value;
+  if (setField(field.dataset.set, value, field.dataset.name, field.checked)) render();
 });
 
 document.querySelector(".sheet").addEventListener("click", event => {
   const button = event.target.closest("button[data-do]");
   if (!button || button.disabled) return;
-  if (button.dataset.do === "sample") loadSample();
-  if (button.dataset.do === "check") runCheck();
-  if (button.dataset.do === "solve") runSolve();
+  const doing = button.dataset.do;
+  if (doing === "sample") loadSample();
+  if (doing === "check") runCheck();
+  if (doing === "solve") runSolve();
+  if (doing === "add-rule") startDraft();
+  if (doing === "cancel-rule") { state.draft = null; render(); }
+  if (doing === "save-rule") saveRule();
+  if (doing === "edit-rule") editRule(button.dataset.id);
+  if (doing === "drop-rule") dropRule(button.dataset.id);
+  if (doing === "undrop") undrop();
 });
 
 at("recheck").addEventListener("click", checkEngine);
