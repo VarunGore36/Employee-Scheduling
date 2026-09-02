@@ -33,17 +33,17 @@ other by weight when they conflict, then reports exactly what it gave up and why
 
 ## Status
 
-The scheduling engine is built and verified. It generates a month-long roster
-from an arbitrary start date for dozens of staff holding multiple roles across
-three shifts a day, understands 24 kinds of rule, and reports every breach in
-the admin's own wording. On the test instance — 44 staff, 31 days, 612
-person-shifts, 32 rules — it produces a fully legal roster with no hard breach,
-independently re-audited by a second implementation of the rules that reads only
-the output.
+The scheduling engine is built and verified, and it is now reachable over HTTP.
+It generates a month-long roster from an arbitrary start date for dozens of staff
+holding multiple roles across three shifts a day, understands 24 kinds of rule,
+and reports every breach in the admin's own wording. On the test instance — 44
+staff, 31 days, 612 person-shifts, 32 rules — it produces a fully legal roster
+with no hard breach, independently re-audited by a second implementation of the
+rules that reads only the output. The same month solved through the API in 25
+seconds returns the same verdict.
 
-Still to come: the HTTP API, a parser that turns rules written as free text into
-draft rules for the admin to confirm, and the web questionnaire the admin fills
-in.
+Still to come: a parser that turns rules written as free text into draft rules
+for the admin to confirm, and the web questionnaire the admin fills in.
 
 ## Running it
 
@@ -53,16 +53,41 @@ Everything is standard library Python, no dependencies to install.
 cd backend
 python -m roster.cli demo --seconds 30 --coverage --roles
 python -m roster.cli rules
+python -m roster.cli serve --port 8000
 python -m unittest discover -s tests -t .
 ```
 
 The first command solves the built-in month and prints the roster grid, the
 per-person workload and the rule report. The second lists every rule type the
-engine understands. The third runs the test suite; the `-t .` is required.
+engine understands. The third starts the API. The fourth runs the test suite; the
+`-t .` is required.
 
 Generated rosters, reports and CSV exports are written to a `roster-output`
 folder beside this project, never inside it, so results stay out of the
 repository. Override with `--out-dir` or `$ROSTER_OUT_DIR`.
+
+## The API
+
+`GET /health`, `/schema`, `/rules` and `/sample` are the read side: the schema
+and rule catalogue are what the questionnaire draws itself from, and `/sample`
+hands back a complete worked instance so the form has something real to open
+with. `POST /validate` says whether an instance is satisfiable before anybody
+waits on a search, `/solve` generates a roster, `/evaluate` scores a roster
+somebody else wrote without touching it, and `/repair` takes a submitted roster
+and improves it in place. Every response carries the roster, the score, the
+coverage, the per-person workload and the full violation list; failures come
+back as `{"error", "field"}` with a 4xx, never as a traceback.
+
+The server binds to loopback only and has **no authentication** by default,
+which is safe on your own machine and nowhere else. Pass `--token` to require a
+shared secret on every route but `/health`; a non-loopback bind without one is
+refused unless you add `--insecure`. Request bodies are capped, only two
+searches run at once and a third is told to retry, and the browser origin for
+cross-origin calls has to be named explicitly with `--cors`.
+
+`--fastapi` serves the same endpoints through FastAPI and uvicorn if you have
+them installed; see `backend/requirements-optional.txt`. The stdlib server is
+the one that has been tested here.
 
 ## Licence
 

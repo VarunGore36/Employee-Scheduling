@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import report
+from . import api, report
 from .generate import small_instance, university_instance
 from .rules import RuleSet
 from .ruleinfo import catalog
@@ -221,6 +221,38 @@ def cmd_schema(args) -> int:
     return 0
 
 
+DEFAULT_UI_DIR = Path(__file__).resolve().parents[2] / "frontend"
+
+
+def _ui_dir(args) -> Path | None:
+    """Explicit folder if given, otherwise the bundled frontend when it exists."""
+    if getattr(args, "ui", None):
+        chosen = Path(args.ui).expanduser()
+        if not (chosen / "index.html").is_file():
+            raise SystemExit(f"no index.html in {chosen}")
+        return chosen
+    if (DEFAULT_UI_DIR / "index.html").is_file():
+        return DEFAULT_UI_DIR
+    return None
+
+
+def cmd_serve(args) -> int:
+    """Run the HTTP API. Loopback and no token by default, which is a private server."""
+    if args.fastapi:
+        from .fastapi_app import serve as serve_fastapi
+        if args.ui:
+            print("--ui is ignored under --fastapi; mount static files yourself",
+                  file=sys.stderr)
+        return serve_fastapi(args.host, args.port, args.token, args.cors)
+    return api.serve(
+        api.ApiConfig(host=args.host, port=args.port, token=args.token,
+                      cors_origin=args.cors, ui_dir=_ui_dir(args),
+                      max_body=args.max_body, max_concurrent=args.max_searches,
+                      quiet=args.quiet),
+        insecure=args.insecure,
+    )
+
+
 def cmd_rules(args) -> int:
     """Human-readable catalogue - what the admin will be asked, in one screen."""
     for entry in catalog():
@@ -329,6 +361,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("rules", help="list every rule type the engine understands")
     p.set_defaults(func=cmd_rules)
+
+    p = sub.add_parser("serve", help="run the HTTP API over the same engine")
+    p.add_argument("--host", default="127.0.0.1",
+                   help="interface to bind; the default is this machine only")
+    p.add_argument("--port", type=int, default=api.DEFAULT_PORT)
+    p.add_argument("--token", default=os.environ.get("ROSTER_TOKEN", ""),
+                   help="secret required on every route but /health ($ROSTER_TOKEN)")
+    p.add_argument("--cors", metavar="ORIGIN", default="",
+                   help="allow browser calls from this origin, e.g. http://localhost:5173")
+    p.add_argument("--ui", metavar="DIR", help="serve this folder as the questionnaire")
+    p.add_argument("--max-body", type=int, default=api.MAX_BODY_BYTES,
+                   help="largest request body accepted, in bytes")
+    p.add_argument("--max-searches", type=int, default=2,
+                   help="solves allowed at once; further ones get 429")
+    p.add_argument("--insecure", action="store_true",
+                   help="permit a non-loopback bind with no token")
+    p.add_argument("-q", "--quiet", action="store_true", help="do not log requests")
+    p.add_argument("--fastapi", action="store_true",
+                   help="serve through FastAPI and uvicorn instead, if installed")
+    p.set_defaults(func=cmd_serve)
 
     return parser
 
