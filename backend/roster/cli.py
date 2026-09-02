@@ -15,7 +15,7 @@ from .ruleinfo import catalog
 from .schema import Instance
 from .search import Solver, SolverOptions
 from .service import ServiceError, evaluate_payload, repair_payload, solve_payload, validate_payload
-from .service import schema_payload
+from .service import parse_payload, schema_payload
 from .state import RosterState
 
 
@@ -221,6 +221,75 @@ def cmd_schema(args) -> int:
     return 0
 
 
+def _rules_text(args) -> str:
+    """The policy text, from the words given, from a file, or from stdin."""
+    if getattr(args, "text", None):
+        return "\n".join(args.text)
+    if args.file and args.file != "-":
+        try:
+            return Path(args.file).expanduser().read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise SystemExit(f"no such file: {args.file}")
+    if args.file == "-" or not sys.stdin.isatty():
+        return sys.stdin.read()
+    raise SystemExit("give the rules as arguments, with --file, or on stdin")
+
+
+def _params_text(rule: dict) -> str:
+    parts = []
+    for key, value in rule["params"].items():
+        parts.append(f"{key}={len(value)} values" if isinstance(value, list)
+                     and len(value) > 4 else f"{key}={value}")
+    return ", ".join(parts) or "no parameters"
+
+
+def _scope_text(rule: dict) -> str:
+    scope = rule.get("scope") or {}
+    if scope.get("kind", "all") == "all":
+        return "everyone"
+    return f"{scope['kind']} {', '.join(scope.get('ids') or [])}"
+
+
+def _print_drafts(out: dict) -> None:
+    for draft in out["drafts"]:
+        rule = draft["rule"]
+        if rule:
+            print(f"{draft['line']:>4}  {rule['severity']:<4} {draft['confidence']:.2f}  "
+                  f"{rule['type']}  {_params_text(rule)}  [{_scope_text(rule)}]")
+        else:
+            print(f"{draft['line']:>4}  --   ----  not read: {draft['problem']}")
+        print(f"      | {draft['text']}")
+        for note in draft["assumptions"]:
+            print(f"      . {note}")
+        for name in draft["suggestions"]:
+            print(f"      > nearest rule type: {name}")
+    c = out["counts"]
+    tail = "" if c["checked_against_instance"] else ("; with no instance nothing was "
+                                                    "checked against real staff, "
+                                                    "shifts or dates")
+    print(f"\n{c['drafted']} of {c['statements']} statements drafted "
+          f"({c['hard']} hard, {c['soft']} soft), {c['unparsed']} not read{tail}")
+
+
+def cmd_parse(args) -> int:
+    """Rules written as prose into draft rules the admin still has to confirm."""
+    payload = {"text": _rules_text(args)}
+    if args.instance:
+        data = _read_json(args.instance)
+        payload["instance"] = data.get("instance", data)
+    elif args.sample:
+        payload["instance"] = _instance(args).to_dict()
+    out = parse_payload(payload)
+    if args.format == "json":
+        print(json.dumps(out, indent=2))
+    else:
+        _print_drafts(out)
+    _dump(_resolve(args, args.out), out, "draft rules json")
+    if args.rules_out:
+        _dump(_resolve(args, args.rules_out), {"rules": out["rules"]}, "rule list json")
+    return 0 if not out["counts"]["unparsed"] else 1
+
+
 DEFAULT_UI_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
 
@@ -358,6 +427,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--out", help="output file (default stdout)")
     _add_out_dir_arg(p)
     p.set_defaults(func=cmd_schema)
+
+    p = sub.add_parser("parse", help="read rules written as free text into draft rules",
+                       description="Reads policy prose into draft rules for the admin "
+                                   "to confirm. Exit status is 1 if any statement "
+                                   "could not be read.")
+    p.add_argument("text", nargs="*", help="the rules, one statement per argument")
+    p.add_argument("-f", "--file", help="read the rules from this file, or - for stdin")
+    p.add_argument("-i", "--instance", help="instance JSON, so names and dates resolve")
+    p.add_argument("--sample", action="store_true",
+                   help="read against the built-in synthetic instance")
+    p.add_argument("--format", choices=("text", "json"), default="text")
+    p.add_argument("-o", "--out", help="write every draft as JSON here")
+    p.add_argument("--rules-out", help="write just the accepted rules as JSON here")
+    _add_out_dir_arg(p)
+    p.set_defaults(func=cmd_parse)
 
     p = sub.add_parser("rules", help="list every rule type the engine understands")
     p.set_defaults(func=cmd_rules)

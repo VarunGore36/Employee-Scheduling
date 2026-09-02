@@ -33,17 +33,23 @@ other by weight when they conflict, then reports exactly what it gave up and why
 
 ## Status
 
-The scheduling engine is built and verified, and it is now reachable over HTTP.
-It generates a month-long roster from an arbitrary start date for dozens of staff
-holding multiple roles across three shifts a day, understands 24 kinds of rule,
-and reports every breach in the admin's own wording. On the test instance — 44
-staff, 31 days, 612 person-shifts, 32 rules — it produces a fully legal roster
-with no hard breach, independently re-audited by a second implementation of the
-rules that reads only the output. The same month solved through the API in 25
-seconds returns the same verdict.
+The scheduling engine is built and verified, it is reachable over HTTP, and it
+now reads rules written as ordinary prose. It generates a month-long roster from
+an arbitrary start date for dozens of staff holding multiple roles across three
+shifts a day, understands 25 kinds of rule, and reports every breach in the
+admin's own wording. On the test instance — 44 staff, 31 days, 612 person-shifts,
+33 rules — it produces a fully legal roster with no hard breach, independently
+re-audited by a second implementation of the rules that reads only the output.
+The same month solved through the API in 25 seconds returns the same verdict.
 
-Still to come: a parser that turns rules written as free text into draft rules
-for the admin to confirm, and the web questionnaire the admin fills in.
+The admin's page has been started. `frontend/index.html` is served by
+`roster.cli serve`, and its first pass walks the month in five steps — period,
+staff, shifts, rules, check — opening the sample month from the API, reading it
+back in the admin's terms, and asking `POST /validate` whether the month is
+possible at all before anybody waits on a search.
+
+Still to come: generating the roster from the page, and the rule questionnaire
+the admin fills in.
 
 ## Running it
 
@@ -53,18 +59,46 @@ Everything is standard library Python, no dependencies to install.
 cd backend
 python -m roster.cli demo --seconds 30 --coverage --roles
 python -m roster.cli rules
+python -m roster.cli parse --sample "Nobody may work more than 6 days in a row"
 python -m roster.cli serve --port 8000
 python -m unittest discover -s tests -t .
 ```
 
 The first command solves the built-in month and prints the roster grid, the
 per-person workload and the rule report. The second lists every rule type the
-engine understands. The third starts the API. The fourth runs the test suite; the
-`-t .` is required.
+engine understands. The third reads rules written as prose into draft rules, and
+takes them as arguments, from a file with `--file`, or on standard input. The
+fourth starts the API. The last runs the test suite — 388 tests, about a minute —
+and the `-t .` is required.
+
+With the server up, open <http://127.0.0.1:8000/> for the admin's page. It is one
+self-contained HTML file with no build step and no dependencies of its own, which
+is why it is plain JavaScript rather than React: nothing could be installed from a
+package registry in the environment this was written in, and a page that cannot be
+run cannot be verified either. The same screens can be rebuilt as React components
+later without the API changing.
 
 Generated rosters, reports and CSV exports are written to a `roster-output`
 folder beside this project, never inside it, so results stay out of the
 repository. Override with `--out-dir` or `$ROSTER_OUT_DIR`.
+
+## Rules written as prose
+
+The administration's rules arrive as sentences, not as forms, so `POST /parse`
+and `roster.cli parse` read those sentences into draft rules. A draft is a
+proposal: it carries the rule it would become, the words it came from, every
+assumption that was made in reading it, and a confidence. Nothing is drafted
+unless it really builds against the instance, so a draft the admin confirms
+cannot fail later. "Nobody may work more than 6 days in a row and no more than 48
+hours a week" comes back as two rules with a note saying the line was split.
+"Staff 07 is on leave from 15 to 19 September" resolves the person and expands
+the dates.
+
+Where a sentence cannot be held honestly, it is refused with the reason rather
+than guessed at: a group that is not in the staff data, a staff number nobody
+has, a date outside the month, a daily hours cap that is really a shift length.
+A dozen refusals of this kind are covered by tests. The drafts are the admin's to
+accept, edit or drop — the structured rules stay the single source of truth.
 
 ## The API
 
@@ -72,11 +106,12 @@ repository. Override with `--out-dir` or `$ROSTER_OUT_DIR`.
 and rule catalogue are what the questionnaire draws itself from, and `/sample`
 hands back a complete worked instance so the form has something real to open
 with. `POST /validate` says whether an instance is satisfiable before anybody
-waits on a search, `/solve` generates a roster, `/evaluate` scores a roster
-somebody else wrote without touching it, and `/repair` takes a submitted roster
-and improves it in place. Every response carries the roster, the score, the
-coverage, the per-person workload and the full violation list; failures come
-back as `{"error", "field"}` with a 4xx, never as a traceback.
+waits on a search, `/parse` reads rules written as prose into drafts, `/solve`
+generates a roster, `/evaluate` scores a roster somebody else wrote without
+touching it, and `/repair` takes a submitted roster and improves it in place.
+Every response carries the roster, the score, the coverage, the per-person
+workload and the full violation list; failures come back as `{"error", "field"}`
+with a 4xx, never as a traceback.
 
 The server binds to loopback only and has **no authentication** by default,
 which is safe on your own machine and nowhere else. Pass `--token` to require a

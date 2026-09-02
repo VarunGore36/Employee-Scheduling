@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duty roster desk</title>
+<style>
+:root {
+  color-scheme: light;
+  --paper: #e7ede9;
+  --sheet: #f5f8f5;
+  --ink: #12263a;
+  --slate: #5c6b72;
+  --rule: #a9bdb2;
+  --stamp: #5b3fa8;
+  --red: #b3241c;
+  --display: "Arial Narrow", "Roboto Condensed", "Liberation Sans Narrow",
+             system-ui, sans-serif;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Liberation Mono",
+          "Courier New", monospace;
+  --row: 34px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.55 var(--body);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+:focus-visible {
+  outline: 2px solid var(--stamp);
+  outline-offset: 2px;
+}
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 24px;
+  padding: 18px 24px 12px;
+  border-bottom: 1px solid var(--ink);
+}
+.masthead h1 {
+  font: 400 34px/0.95 var(--display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin: 0;
+}
+.wire {
+  flex: 1 1 260px;
+  font: 12px/1.4 var(--mono);
+  color: var(--slate);
+  letter-spacing: 0.02em;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lamp {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--slate);
+  vertical-align: 1px;
+}
+.lamp[data-state="ready"] { background: var(--stamp); }
+.lamp[data-state="down"] { background: var(--red); }
+.register {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  align-items: stretch;
+  min-height: 0;
+}
+.stub {
+  border-right: 1px solid var(--ink);
+  padding-top: 12px;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--row) - 1px),
+      rgba(169, 189, 178, 0.55) calc(var(--row) - 1px) var(--row));
+  background-position: 0 12px;
+}
+.stub button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: calc(var(--row) * 2);
+  padding: 0 14px 0 18px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 400 15px/1 var(--display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.stub button:hover { background: rgba(91, 63, 168, 0.07); }
+.stub .no {
+  font: 11px/1 var(--mono);
+  color: var(--slate);
+  letter-spacing: 0;
+}
+.stub button[aria-current="true"] {
+  background: var(--sheet);
+  box-shadow: inset 0 0 0 1px rgba(18, 38, 58, 0.06);
+}
+.stub button[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--stamp);
+  transform-origin: top;
+  animation: ink 180ms ease-out;
+}
+.stub button[aria-current="true"] .no { color: var(--stamp); }
+.stub button[disabled] { color: var(--slate); cursor: not-allowed; }
+@keyframes ink { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.sheet {
+  background: var(--sheet);
+  padding: 26px 30px 34px;
+  min-width: 0;
+}
+.sheet h2 {
+  font: 400 22px/1 var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 0 0 4px;
+}
+.sheet .lede {
+  max-width: 62ch;
+  margin: 0 0 22px;
+  color: var(--slate);
+}
+.sheet section[hidden] { display: none; }
+button.act {
+  font: 400 14px/1 var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sheet);
+  background: var(--stamp);
+  border: 0;
+  padding: 12px 20px;
+  min-height: 44px;
+  cursor: pointer;
+}
+button.act:hover { background: #4a3290; }
+button.act[disabled] { background: var(--slate); cursor: not-allowed; }
+button.quiet {
+  font: 12px/1 var(--mono);
+  color: var(--stamp);
+  background: none;
+  border: 1px solid var(--rule);
+  padding: 7px 10px;
+  min-height: 32px;
+  cursor: pointer;
+}
+button.quiet:hover { border-color: var(--stamp); }
+.ledger {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0;
+  margin: 0 0 22px;
+  max-width: 640px;
+  border-top: 1px solid var(--rule);
+}
+.ledger dt, .ledger dd {
+  margin: 0;
+  padding: 7px 12px 7px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.ledger dt {
+  font: 12px/1.6 var(--mono);
+  color: var(--slate);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-right: 28px;
+}
+.ledger dd { font-variant-numeric: tabular-nums; }
+.ledger dt.bad { color: var(--red); }
+.ledger + .ledger, .ledger + button { margin-top: -8px; }
+.empty {
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--stamp);
+  padding: 18px 20px;
+  max-width: 640px;
+  margin: 0 0 22px;
+}
+.empty p { margin: 0 0 14px; max-width: 54ch; }
+.tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 28px;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+  font: 12px/1.6 var(--mono);
+  color: var(--slate);
+}
+.tally b {
+  display: block;
+  font: 400 26px/1.1 var(--display);
+  color: var(--ink);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.ticker {
+  border-top: 1px solid var(--ink);
+  padding: 10px 24px;
+  font: 12px/1.5 var(--mono);
+  color: var(--slate);
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+}
+.ticker b { color: var(--ink); font-weight: 400; }
+.ticker[data-tone="bad"] b, .ticker[data-tone="bad"] { color: var(--red); }
+.sr {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+@media (max-width: 760px) {
+  .register { grid-template-columns: 1fr; }
+  .stub {
+    display: flex;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--ink);
+    padding-top: 0;
+    background: none;
+  }
+  .stub button {
+    width: auto;
+    height: 52px;
+    white-space: nowrap;
+    border-right: 1px solid var(--rule);
+  }
+  .stub button[aria-current="true"]::before { inset: auto 0 0 0; width: auto; height: 4px; }
+  .masthead h1 { font-size: 26px; }
+  .wire { text-align: left; }
+  .sheet { padding: 20px 18px 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<header class="masthead">
+  <h1>Duty roster desk</h1>
+  <p class="wire"><span class="lamp" id="lamp"></span><span id="wire">asking the engine&hellip;</span></p>
+  <button class="quiet" type="button" id="recheck">Check again</button>
+</header>
+
+<main class="register">
+  <nav class="stub" id="stub" aria-label="Steps">
+    <button type="button" data-go="period" aria-current="true"><span class="no">1</span>Period</button>
+    <button type="button" data-go="staff"><span class="no">2</span>Staff</button>
+    <button type="button" data-go="shifts"><span class="no">3</span>Shifts</button>
+    <button type="button" data-go="rules"><span class="no">4</span>Rules</button>
+    <button type="button" data-go="check"><span class="no">5</span>Check</button>
+  </nav>
+
+  <div class="sheet">
+    <section id="s-period" aria-labelledby="h-period">
+      <h2 id="h-period">Period</h2>
+      <p class="lede">A roster covers one month at a time, starting on whichever
+        date the office needs — not necessarily the 1st.</p>
+      <div data-fill="period"></div>
+    </section>
+
+    <section id="s-staff" hidden aria-labelledby="h-staff">
+      <h2 id="h-staff">Staff</h2>
+      <p class="lede">Everyone who can be rostered, and the roles each of them
+        covers. One person may hold more than one role.</p>
+      <div data-fill="staff"></div>
+    </section>
+
+    <section id="s-shifts" hidden aria-labelledby="h-shifts">
+      <h2 id="h-shifts">Shifts</h2>
+      <p class="lede">The shifts in a day, how long each one runs, and how many
+        people each role needs on it.</p>
+      <div data-fill="shifts"></div>
+    </section>
+
+    <section id="s-rules" hidden aria-labelledby="h-rules">
+      <h2 id="h-rules">Rules</h2>
+      <p class="lede">Hard rules must hold for a roster to be legal. Soft rules
+        are preferences and fairness goals, traded against each other by weight.</p>
+      <div data-fill="rules"></div>
+    </section>
+
+    <section id="s-check" hidden aria-labelledby="h-check">
+      <h2 id="h-check">Check</h2>
+      <p class="lede">Before anyone waits on a search: is this month even
+        possible? The engine weighs the demand against the staff who are
+        qualified and free.</p>
+      <div data-fill="check"></div>
+    </section>
+  </div>
+</main>
+
+<footer class="ticker" id="ticker">
+  <b id="tick">Nothing on the desk yet.</b>
+  <span id="tock">Open the sample month on step 1.</span>
+</footer>
+<script>
+"use strict";
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+              "Saturday", "Sunday"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+                "August", "September", "October", "November", "December"];
+const base = location.protocol.startsWith("http") ? "" : "http://127.0.0.1:8000";
+const token = new URLSearchParams(location.search).get("token") || "";
+const state = { instance: null, health: null, check: null, step: "period" };
+const at = id => document.getElementById(id);
+const panel = name => document.querySelector('[data-fill="' + name + '"]');
+
+function esc(value) {
+  return String(value).replace(/[&<>"]/g, ch =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+}
+
+function say(head, tail, tone) {
+  at("tick").textContent = head;
+  at("tock").textContent = tail || "";
+  at("ticker").dataset.tone = tone || "";
+}
+
+async function api(path, payload) {
+  const head = {};
+  if (token) head["Authorization"] = "Bearer " + token;
+  if (payload !== undefined) head["Content-Type"] = "application/json";
+  let reply;
+  try {
+    reply = await fetch(base + path, {
+      method: payload === undefined ? "GET" : "POST",
+      headers: head,
+      body: payload === undefined ? undefined : JSON.stringify(payload)
+    });
+  } catch (err) {
+    throw new Error("the engine is not answering — start it with: " +
+                    "python -m roster.cli serve");
+  }
+  const text = await reply.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (err) { data = null; }
+  if (reply.status === 401) {
+    throw new Error("the engine wants a token — open this page with " +
+                    "?token=… on the end of the address");
+  }
+  if (!reply.ok) {
+    const why = (data && data.error) || reply.status + " " + reply.statusText;
+    throw new Error(data && data.field ? why + " (" + data.field + ")" : why);
+  }
+  return data;
+}
+function isoDate(iso) { return new Date(iso + "T00:00:00"); }
+
+function longDate(iso) {
+  const day = isoDate(iso);
+  return DAYS[(day.getDay() + 6) % 7].slice(0, 3) + " " + day.getDate() + " " +
+         MONTHS[day.getMonth()] + " " + day.getFullYear();
+}
+
+function addDays(iso, count) {
+  const day = isoDate(iso);
+  day.setDate(day.getDate() + count);
+  return [day.getFullYear(),
+          String(day.getMonth() + 1).padStart(2, "0"),
+          String(day.getDate()).padStart(2, "0")].join("-");
+}
+
+function clock(minutes) {
+  const inDay = ((minutes % 1440) + 1440) % 1440;
+  return String(Math.floor(inDay / 60)).padStart(2, "0") + ":" +
+         String(inDay % 60).padStart(2, "0");
+}
+
+function hours(minutes) {
+  return (minutes % 60 ? (minutes / 60).toFixed(1) : minutes / 60) + "h";
+}
+
+function ledger(rows) {
+  return '<dl class="ledger">' + rows.map(row =>
+    "<dt" + (row[2] ? ' class="' + row[2] + '"' : "") + ">" + esc(row[0]) +
+    "</dt><dd>" + esc(row[1]) + "</dd>").join("") + "</dl>";
+}
+
+function tally(rows) {
+  return '<ul class="tally">' + rows.map(row =>
+    "<li><b>" + esc(row[1]) + "</b>" + esc(row[0]) + "</li>").join("") + "</ul>";
+}
+
+function press(label, action, quiet) {
+  return '<button class="' + (quiet ? "quiet" : "act") + '" type="button" ' +
+         'data-do="' + action + '">' + esc(label) + "</button>";
+}
+
+function nothingYet(message, label, action) {
+  return '<div class="empty"><p>' + esc(message) + "</p>" +
+         press(label, action) + "</div>";
+}
+const OPEN_IT = "Open the sample month";
+
+function periodPanel() {
+  const inst = state.instance;
+  if (!inst) return nothingYet(
+    "Nothing is on the desk yet. The sample month is a real 31-day university " +
+    "roster — 44 staff, three shifts a day, 33 rules — and every other step " +
+    "reads from whatever is loaded here.", OPEN_IT, "sample");
+  const span = inst.horizon;
+  const weekend = (span.weekend_days || []).map(day => DAYS[day]).join(", ");
+  const shut = span.holidays || [];
+  return ledger([
+    ["Instance", inst.name],
+    ["First day", longDate(span.start)],
+    ["Last day", longDate(addDays(span.start, span.num_days - 1))],
+    ["Days", span.num_days],
+    ["Weekend", weekend || "none"],
+    ["Holidays", shut.length ? shut.map(longDate).join("; ") : "none"]
+  ]) + press("Reload the sample month", "sample", true);
+}
+
+function staffPanel() {
+  const inst = state.instance;
+  if (!inst) return nothingYet("The staff list arrives with the month.",
+                               OPEN_IT, "sample");
+  const qualified = {};
+  inst.roles.forEach(role => { qualified[role.id] = 0; });
+  inst.employees.forEach(person => person.roles.forEach(role => {
+    qualified[role] = (qualified[role] || 0) + 1;
+  }));
+  const doubling = inst.employees.filter(person => person.roles.length > 1).length;
+  return tally([["on the roll", inst.employees.length],
+                ["roles", inst.roles.length],
+                ["hold more than one role", doubling]]) +
+    ledger(inst.roles.map(role =>
+      [role.id, role.name + " — " + qualified[role.id] + " qualified"])) +
+    ledger(inst.employees.map(person =>
+      [person.id, person.name + " · " + person.roles.join(", ") + " · " +
+                  person.contract]));
+}
+
+function shiftsPanel() {
+  const inst = state.instance;
+  if (!inst) return nothingYet("The shifts and the demand arrive with the month.",
+                               OPEN_IT, "sample");
+  const needed = {};
+  let total = 0;
+  inst.demand.forEach(line => {
+    needed[line.shift] = (needed[line.shift] || 0) + line.required;
+    total += line.required;
+  });
+  return tally([["shifts a day", inst.shifts.length],
+                ["person-shifts to fill", total],
+                ["demand lines", inst.demand.length]]) +
+    ledger(inst.shifts.map(shift =>
+      [shift.id, shift.name + " · " + clock(shift.start_min) + "–" +
+                 clock(shift.start_min + shift.duration_min) + " · " +
+                 hours(shift.duration_min) +
+                 (shift.counts_as_night ? " · counts as a night" : "") + " · " +
+                 (needed[shift.id] || 0) + " needed this month"]));
+}
+function rulesPanel() {
+  const inst = state.instance;
+  if (!inst) return nothingYet("The rules arrive with the month.", OPEN_IT, "sample");
+  const hard = inst.rules.filter(rule => rule.severity === "hard");
+  const kinds = new Set(inst.rules.map(rule => rule.type));
+  return tally([["hard rules", hard.length],
+                ["soft rules", inst.rules.length - hard.length],
+                ["kinds of rule in play", kinds.size]]) +
+    ledger(inst.rules.map(rule =>
+      [rule.severity, rule.label +
+        (rule.severity === "soft" ? " · weight " + rule.weight : "")]));
+}
+
+function checkPanel() {
+  if (!state.instance) return nothingYet("There is no month to check yet.",
+                                         OPEN_IT, "sample");
+  const out = state.check;
+  if (!out) return '<div class="empty"><p>The engine will weigh what every duty ' +
+    "needs against the staff who are qualified and free, and name anything that " +
+    "cannot work — before anyone waits on a search.</p>" +
+    press("Check this month", "check") + "</div>";
+  const summary = out.instance;
+  const notes = out.problems.map(problem => ["cannot work", problem, "bad"])
+    .concat(out.warnings.map(warning => ["worth knowing", warning]));
+  return tally([[out.ok ? "the month is workable" : "the month cannot work",
+                 out.ok ? "Yes" : "No"],
+                ["person-shifts to fill", summary.demand_person_shifts],
+                ["person-days available", summary.capacity_person_days],
+                ["of capacity used", Math.round(summary.utilisation * 100) + "%"]]) +
+    ledger(Object.keys(out.capacity_by_role).map(role => {
+      const seat = out.capacity_by_role[role];
+      return [role, seat.qualified_staff + " qualified · " +
+                    seat.person_days_demanded + " of " +
+                    seat.person_days_available + " person-days needed"];
+    })) +
+    (notes.length ? ledger(notes) : "") +
+    press("Run the check again", "check", true);
+}
+
+const PANELS = { period: periodPanel, staff: staffPanel, shifts: shiftsPanel,
+                 rules: rulesPanel, check: checkPanel };
+
+function render() {
+  const had = document.activeElement;
+  const held = had && had.dataset ? had.dataset.do : "";
+  Object.keys(PANELS).forEach(name => {
+    panel(name).innerHTML = PANELS[name]();
+    at("s-" + name).hidden = name !== state.step;
+  });
+  document.querySelectorAll("#stub button").forEach(button => {
+    button.disabled = !state.instance && button.dataset.go !== "period";
+    button.setAttribute("aria-current", String(button.dataset.go === state.step));
+  });
+  if (held) {
+    const again = at("s-" + state.step)
+      .querySelector('button[data-do="' + held + '"]');
+    if (again) again.focus();
+  }
+}
+
+function goTo(name) {
+  if (!PANELS[name]) return;
+  state.step = name;
+  render();
+}
+async function checkEngine() {
+  at("lamp").dataset.state = "";
+  at("wire").textContent = "asking the engine…";
+  try {
+    const health = await api("/health");
+    state.health = health;
+    at("lamp").dataset.state = "ready";
+    at("wire").textContent = health.rule_types + " kinds of rule · " +
+      health.endpoints.length + " endpoints · " +
+      (health.authenticated ? "token required" : "no token, loopback only");
+  } catch (err) {
+    state.health = null;
+    at("lamp").dataset.state = "down";
+    at("wire").textContent = err.message;
+  }
+}
+
+async function loadSample() {
+  say("Fetching the sample month…", "");
+  try {
+    const out = await api("/sample");
+    state.instance = out.instance;
+    state.check = null;
+    render();
+    say(state.instance.employees.length + " staff over " +
+        state.instance.horizon.num_days + " days.",
+        "Steps 2 to 5 are open. Step 5 asks whether the month is possible.");
+  } catch (err) {
+    say("Could not open the sample month.", err.message, "bad");
+  }
+}
+
+async function runCheck() {
+  if (!state.instance) return;
+  say("Weighing the demand against the staff…", "");
+  try {
+    const out = await api("/validate", { instance: state.instance });
+    state.check = out;
+    render();
+    say(out.ok ? "This month is workable." : "This month cannot work as it stands.",
+        out.ok ? "Nothing impossible found before the search starts."
+               : out.problems.length + " named on step 5.",
+        out.ok ? "" : "bad");
+  } catch (err) {
+    say("The check did not run.", err.message, "bad");
+  }
+}
+
+at("stub").addEventListener("click", event => {
+  const button = event.target.closest("button[data-go]");
+  if (button && !button.disabled) goTo(button.dataset.go);
+});
+
+document.querySelector(".sheet").addEventListener("click", event => {
+  const button = event.target.closest("button[data-do]");
+  if (!button) return;
+  if (button.dataset.do === "sample") loadSample();
+  if (button.dataset.do === "check") runCheck();
+});
+
+at("recheck").addEventListener("click", checkEngine);
+render();
+checkEngine();
+</script>
+</body>
+</html>

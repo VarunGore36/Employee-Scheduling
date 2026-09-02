@@ -11,9 +11,10 @@ class RowStats:
     """Everything the employee-scoped rules need about one employee's month."""
 
     __slots__ = (
-        "shifts", "roles", "work", "total", "minutes", "by_shift", "nights",
-        "work_blocks", "off_blocks", "same_blocks", "pairs",
+        "shifts", "roles", "work", "total", "minutes", "day_minutes", "by_shift",
+        "nights", "work_blocks", "off_blocks", "same_blocks", "pairs",
         "weekends_worked", "weekends_partial", "work_per_week", "off_per_week",
+        "minutes_per_week",
     )
 
     def __init__(self, state: "RosterState", e: int) -> None:
@@ -30,10 +31,12 @@ class RowStats:
         self.minutes = 0
         self.by_shift = [0] * inst.num_shifts
         self.nights = 0
-        for s in shifts:
+        self.day_minutes = [0] * num_days
+        for d, s in enumerate(shifts):
             if s != OFF:
                 self.total += 1
                 self.minutes += durations[s]
+                self.day_minutes[d] = durations[s]
                 self.by_shift[s] += 1
                 if state.is_night[s]:
                     self.nights += 1
@@ -83,15 +86,22 @@ class RowStats:
         # per calendar week (partial weeks at the horizon edges included)
         self.work_per_week = []
         self.off_per_week = []
+        self.minutes_per_week = []
         for week in state.calendar_weeks:
             worked = sum(1 for i in week if self.work[i])
             self.work_per_week.append(worked)
             self.off_per_week.append(len(week) - worked)
+            self.minutes_per_week.append(sum(self.day_minutes[i] for i in week))
 
     def windows_worked(self, windows: list[list[int]]) -> list[int]:
         """Working-day count in each of the given day windows."""
         work = self.work
         return [sum(1 for i in w if work[i]) for w in windows]
+
+    def windows_minutes(self, windows: list[list[int]]) -> list[int]:
+        """Rostered minutes in each of the given day windows."""
+        day_minutes = self.day_minutes
+        return [sum(day_minutes[i] for i in w) for w in windows]
 
 
 class RosterState:

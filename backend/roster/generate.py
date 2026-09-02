@@ -81,6 +81,8 @@ def _policy_rules() -> list[Rule]:
              label="At least one day off every week"),
         rule("weekly_max", "max_working_days_per_window", max=6, window="calendar",
              label="At most 6 working days in a week"),
+        rule("weekly_hours", "hours_per_window", max_hours=48, window="calendar",
+             label="At most 48 hours of work in a week"),
         rule("month_load", "total_shifts_range", min=8, max=22,
              label="Between 8 and 22 duties in the month"),
         rule("nights_cap", "max_night_shifts", max=8,

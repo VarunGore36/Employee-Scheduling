@@ -215,6 +215,29 @@ class Audit:
                         out.append(f"{e}: {worked} days worked from "
                                    f"{self.date_of(window[0])}")
 
+        elif rtype == "hours_per_window":
+            if p.get("window", "calendar") == "calendar":
+                windows = self.calendar_weeks()
+            else:
+                size = p.get("window_days", 7)
+                windows = [list(range(i, i + size))
+                           for i in range(self.num_days - size + 1)]
+            floor, cap = p.get("min_hours") or 0, p.get("max_hours")
+            for e in self.members(rule):
+                for window in windows:
+                    full = len(window) >= (7 if p.get("window", "calendar") == "calendar"
+                                           else p.get("window_days", 7))
+                    minutes = sum(self.shifts[self.grid[e][d][0]]["duration_min"]
+                                  for d in window if self.grid[e][d] is not None)
+                    hours = minutes / 60.0
+                    where = f"the week of {self.date_of(window[0])}"
+                    if full and hours < floor:
+                        out.append(f"{e}: {hours:g} hours in {where}, {floor:g} wanted")
+                    if cap is None or (not full and not p.get("include_partial", True)):
+                        continue
+                    if hours > cap:
+                        out.append(f"{e}: {hours:g} hours in {where}, max {cap:g}")
+
         elif rtype == "total_shifts_range":
             for e in self.members(rule):
                 n = len(self.worked(e))
@@ -279,7 +302,7 @@ BUDGET = SolverOptions(seed=20260901, max_seconds=25.0, polish_iterations=4000)
 
 
 class TestMonthLongRoster(unittest.TestCase):
-    """A 31-day roster from an arbitrary start date, 44 staff, 32 rules."""
+    """A 31-day roster from an arbitrary start date, 44 staff, 33 rules."""
 
     @classmethod
     def setUpClass(cls):
@@ -331,6 +354,19 @@ class TestMonthLongRoster(unittest.TestCase):
             broken["rows"][0]["days"][d] = None
         audit = Audit(self.payload["instance"], broken)
         self.assertTrue(audit.shortfalls() or audit.breaches())
+
+    def test_the_audit_would_notice_a_week_over_the_hours_ceiling(self):
+        """The weekly hours ceiling is new, so prove the auditor can see it break."""
+        capped = next(r for r in self.inst.rules if r.type == "hours_per_window")
+        week = next(w for w in self.audit.calendar_weeks() if len(w) == 7)
+        broken = {"rows": [dict(row, days=list(row["days"]))
+                           for row in self.payload["roster"]["rows"]]}
+        emp = broken["rows"][0]["employee"]
+        role = self.audit.staff[emp]["roles"][0]
+        for d in week:
+            broken["rows"][0]["days"][d] = {"shift": "M", "role": role}
+        said = Audit(self.payload["instance"], broken).check(capped.to_dict())
+        self.assertTrue(any(emp in line and "max 48" in line for line in said), said)
 
     def test_leave_and_fixed_duties_were_honoured(self):
         leave = [r for r in self.inst.rules if r.type == "unavailable"]

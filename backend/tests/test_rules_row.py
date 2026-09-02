@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from roster.rules import REGISTRY, build
 from roster.schema import Demand
@@ -182,6 +183,73 @@ class TestWindowsAndWeekends(RuleCase):
         state = self.check(r, ".....M........", 1)
         self.assertIn("A works only part of the weekend starting 2026-09-12",
                       messages(self.inst, r, state))
+
+
+class TestHoursPerWindow(RuleCase):
+    """Every shift in the fixture is 8 hours, so hours are days times eight."""
+
+    def test_weekly_ceiling(self):
+        r = rule("r", "hours_per_window", max_hours=48)
+        self.check(r, "MMMMMM.MMMMMM.", 0)          # 48 hours in each week
+        self.check(r, "MMMMMMMMMMMMM.", 8)          # 56 in the first week
+        self.check(r, "MMMMMMMMMMMMMM", 8 + 8)
+
+    def test_weekly_floor(self):
+        r = rule("r", "hours_per_window", min_hours=40)
+        self.check(r, "MMMMM..MMMMM..", 0)          # 40 hours in each week
+        self.check(r, "MMMM...MMMMM..", 8)
+        self.check(r, "..............", 40 + 40)
+
+    def test_a_band_holds_both_ends(self):
+        r = rule("r", "hours_per_window", min_hours=40, max_hours=48)
+        self.check(r, "MMMMM..MMMMMM.", 0)
+        self.check(r, "MMMM...MMMMMMM", 8 + 8)      # 8 short, then 8 over
+
+    def test_a_floor_above_the_ceiling_is_refused(self):
+        r = rule("r", "hours_per_window", min_hours=50, max_hours=48)
+        with self.assertRaises(ValueError) as caught:
+            build(r, self.inst)
+        self.assertIn("min_hours 50 is above max_hours 48", str(caught.exception))
+
+    def test_the_ceiling_reaches_part_weeks_but_the_floor_does_not(self):
+        """A four-day stub cannot owe a full week's hours, yet it can still breach."""
+        inst = instance(days=11, start="2026-09-10")   # Thu: a 4-day stub, then a full week
+        self.assertEqual([len(w) for w in inst.horizon.calendar_weeks()], [4, 7])
+        state = lay_out(inst, {"A": "MM..MMMM..."})    # 16 hours in the stub, 32 after
+        floor = rule("r", "hours_per_window", min_hours=40)
+        self.assertEqual(amount(inst, floor, state, "A"), 8)     # the full week only
+        asked = rule("r", "hours_per_window", min_hours=40, include_partial=True)
+        self.assertEqual(amount(inst, asked, state, "A"), 8)     # a floor never reaches a stub
+        ceiling = rule("r", "hours_per_window", max_hours=8)
+        self.assertEqual(amount(inst, ceiling, state, "A"), 8 + 24)
+        kept_out = rule("r", "hours_per_window", max_hours=8, include_partial=False)
+        self.assertEqual(amount(inst, kept_out, state, "A"), 24)
+
+    def test_rolling_window_catches_the_week_straddling_trick(self):
+        calendar = rule("c", "hours_per_window", max_hours=32, window="calendar")
+        rolling = rule("r", "hours_per_window", max_hours=32, window="rolling",
+                       window_days=7)
+        row = "...MMMMMMM...."          # days 3..9, spanning the Sun/Mon boundary
+        self.check(calendar, row, 0)
+        # the same eight windows as the working-day test, now in hours: 8 x (1+2+3+2+1)
+        self.check(rolling, row, 72)
+
+    def test_the_breach_names_the_week_and_the_hours(self):
+        r = rule("r", "hours_per_window", min_hours=40, max_hours=48)
+        state = lay_out(self.inst, {"A": "MMMMMMM....MMM"})
+        said = messages(self.inst, r, state)
+        self.assertIn("A is rostered 56 hours in the week of 2026-09-07, "
+                      "8 over the 48 allowed", said)
+        self.assertIn("A is rostered 24 hours in the week of 2026-09-14, "
+                      "16 short of the 40 required", said)
+
+    def test_shift_length_is_what_counts_not_the_day_count(self):
+        """A twelve-hour evening costs twelve, so five days can break a weekly cap."""
+        inst = instance(days=7)
+        inst.shifts[1] = replace(inst.shifts[1], duration_min=12 * 60)
+        state = lay_out(inst, {"A": "MEEEE.."})       # 8 + 4x12 = 56 hours
+        r = rule("r", "hours_per_window", max_hours=48)
+        self.assertEqual(amount(inst, r, state, "A"), 8)
 
 
 if __name__ == "__main__":

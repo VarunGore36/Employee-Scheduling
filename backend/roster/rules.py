@@ -593,6 +593,10 @@ class _WindowRule(RuleEvaluator):
         self.lengths = [len(w) for w in self.windows]
         self.expected = 7 if self.mode == "calendar" else self.size
 
+    def window_label(self, i: int) -> str:
+        """The window's first date, so a breach names a real week."""
+        return self.inst.horizon.date_of(self.windows[i][0]).isoformat()
+
 
 @register
 class MaxWorkingDaysPerWindow(_WindowRule):
@@ -669,6 +673,81 @@ class MinDaysOffPerWindow(_WindowRule):
             f"{self.limit} per {self.mode} week",
             employee=emp,
         )]
+
+
+@register
+class HoursPerWindow(_WindowRule):
+    type = "hours_per_window"
+    label = "Hours per week"
+    help = ("Bounds rostered hours inside each week, which is how a statutory "
+            "weekly ceiling and a daily-wage income floor are both written. "
+            "Either bound may be left out. A ceiling applies to the part-weeks "
+            "at the edges of the period as well unless you say otherwise; a "
+            "floor never does, since a two-day stub cannot owe a full week's "
+            "hours. Violation size is counted in hours.")
+    example = "No one works more than 48 hours in any week."
+    params_spec = [
+        param("min_hours", FLOAT, "Fewest hours in a week", default=0, minimum=0),
+        param("max_hours", FLOAT, "Most hours in a week", default=None, minimum=0,
+              required=False),
+        param("window", CHOICE, "Window", default="calendar",
+              options=["calendar", "rolling"]),
+        param("window_days", INT, "Window length (rolling only)", default=7, minimum=1),
+        param("include_partial", BOOL, "Apply the ceiling to part-weeks too",
+              default=True),
+    ]
+
+    def setup(self) -> None:
+        super().setup()
+        self.low = float(self.params.get("min_hours") or 0)
+        high = self.params.get("max_hours")
+        self.high = None if high is None else float(high)
+        if self.high is not None and self.low > self.high:
+            raise ValueError(
+                f"rule {self.rule.id} ({self.type}): min_hours {self.low:g} is above "
+                f"max_hours {self.high:g}"
+            )
+
+    def _hours(self, stats) -> list[float]:
+        minutes = (stats.minutes_per_week if self.mode == "calendar"
+                   else stats.windows_minutes(self.windows))
+        return [m / 60.0 for m in minutes]
+
+    def row_amount(self, state, e, stats) -> float:
+        total = 0.0
+        for i, hours in enumerate(self._hours(stats)):
+            full = self.lengths[i] >= self.expected
+            if full:
+                total += under(hours, self.low)
+            if self.high is not None and (full or not self.full_only):
+                total += over(hours, self.high)
+        return total
+
+    def row_violations(self, state, e, stats):
+        emp = self.inst.employees[e].id
+        out = []
+        for i, hours in enumerate(self._hours(stats)):
+            full = self.lengths[i] >= self.expected
+            where = f"the week of {self.window_label(i)}"
+            if not full:
+                where += f" ({self.lengths[i]} day part-week)"
+            short = under(hours, self.low) if full else 0.0
+            if short:
+                out.append(self.violation(
+                    short,
+                    f"{emp} is rostered {hours:g} hours in {where}, "
+                    f"{short:g} short of the {self.low:g} required",
+                    employee=emp, days=tuple(self.windows[i])))
+            if self.high is None or (self.full_only and not full):
+                continue
+            excess = over(hours, self.high)
+            if excess:
+                out.append(self.violation(
+                    excess,
+                    f"{emp} is rostered {hours:g} hours in {where}, "
+                    f"{excess:g} over the {self.high:g} allowed",
+                    employee=emp, days=tuple(self.windows[i])))
+        return out
 
 
 # Weekends

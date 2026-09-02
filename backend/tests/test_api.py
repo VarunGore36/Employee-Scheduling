@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import re
 import threading
 import time
 import unittest
@@ -12,6 +13,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from roster.api import ApiConfig, is_loopback, make_server, query_kwargs, sample_instance, serve
+from roster.cli import DEFAULT_UI_DIR
 from roster.generate import small_instance
 from roster.rules import REGISTRY
 from roster.service import ENDPOINTS, MAX_SECONDS_CAP, ServiceError
@@ -165,6 +167,30 @@ class TestWriteRoutes(ServedCase):
         out = self.call("POST", "/schema", {"instance": small_instance().to_dict()}).json
         self.assertEqual(len(out["scope"]["employees"]), 12)
         self.assertEqual(out["scope"]["roles"], ["DSG", "LSG", "MTS"])
+
+    def test_parse_turns_written_rules_into_drafts(self):
+        text = ("Every duty must be staffed.\n"
+                "Nobody may work more than 6 days in a row.\n"
+                "Coffee tastes better at 3am.\n")
+        reply = self.call("POST", "/parse", {"text": text,
+                                            "instance": small_instance().to_dict()})
+        self.assertEqual(reply.status, 200)
+        out = reply.json
+        self.assertEqual(out["counts"]["statements"], 3)
+        self.assertEqual([r["type"] for r in out["rules"]],
+                         ["coverage", "max_consecutive_working_days"])
+        self.assertEqual([d["line"] for d in out["unparsed"]], [3])
+
+    def test_parse_works_before_any_instance_exists(self):
+        out = self.call("POST", "/parse",
+                        {"text": "Nobody may work more than 6 days in a row."}).json
+        self.assertEqual(out["counts"]["drafted"], 1)
+        self.assertFalse(out["counts"]["checked_against_instance"])
+
+    def test_parse_names_the_field_when_the_text_is_missing(self):
+        reply = self.call("POST", "/parse", {"instance": small_instance().to_dict()})
+        self.assertEqual(reply.status, 400)
+        self.assertEqual(reply.json["field"], "text")
 
     def test_a_roster_for_the_wrong_horizon_is_rejected_by_field(self):
         payload = body(roster={"rows": [{"employee": "E01", "days": ["M"]}]})
@@ -345,6 +371,32 @@ class TestStaticUi(ServedCase):
 
     def test_a_missing_file_is_a_404(self):
         self.assertEqual(self.call("GET", "/missing.html").status, 404)
+
+
+class TestTheShippedPage(ServedCase):
+    """The page in frontend/ is served by the same process that answers the API."""
+
+    @classmethod
+    def config(cls) -> ApiConfig:
+        return ApiConfig(port=0, quiet=True, ui_dir=DEFAULT_UI_DIR)
+
+    @classmethod
+    def setUpClass(cls):
+        if not (DEFAULT_UI_DIR / "index.html").exists():
+            raise unittest.SkipTest("no frontend/index.html in this checkout")
+        super().setUpClass()
+
+    def test_the_page_the_admin_opens_is_there(self):
+        reply = self.call("GET", "/")
+        self.assertEqual(reply.status, 200)
+        self.assertIn(b"Duty roster desk", reply.raw)
+
+    def test_the_page_only_calls_routes_this_server_answers(self):
+        page = self.call("GET", "/").raw.decode("utf-8")
+        called = set(re.findall(r'api\("(/[a-z]+)"', page))
+        self.assertTrue(called, "the page asks the engine for nothing")
+        known = {"/" + name for name in ENDPOINTS} | {"/health", "/sample", "/rules"}
+        self.assertLessEqual(called, known)
 
 
 class TestBindingRules(unittest.TestCase):

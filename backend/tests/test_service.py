@@ -8,7 +8,7 @@ import unittest
 from roster.generate import small_instance, university_instance
 from roster.service import (
     ENDPOINTS, MAX_SECONDS_CAP, ServiceError, evaluate_payload, handle,
-    repair_payload, schema_payload, solve_payload, validate_payload,
+    parse_payload, repair_payload, schema_payload, solve_payload, validate_payload,
 )
 
 
@@ -147,6 +147,37 @@ class TestSchemaEndpoint(unittest.TestCase):
         self.assertTrue(out["scope"]["employees"])
 
 
+class TestParseEndpoint(unittest.TestCase):
+    TEXT = ("Every duty must be staffed.\n"
+            "Nobody may work more than 6 days in a row.\n"
+            "Coffee tastes better at 3am.\n")
+
+    def test_free_text_comes_back_as_drafts_without_an_instance(self):
+        out = parse_payload({"text": self.TEXT})
+        self.assertEqual(out["counts"]["statements"], 3)
+        self.assertEqual(out["counts"]["drafted"], 2)
+        self.assertEqual(out["counts"]["unparsed"], 1)
+        self.assertFalse(out["counts"]["checked_against_instance"])
+
+    def test_an_instance_is_used_to_check_what_was_read(self):
+        out = parse_payload({"text": self.TEXT,
+                             "instance": small_instance().to_dict()})
+        self.assertTrue(out["counts"]["checked_against_instance"])
+        self.assertEqual([r["type"] for r in out["rules"]],
+                         ["coverage", "max_consecutive_working_days"])
+
+    def test_the_drafted_rules_go_straight_back_into_solve(self):
+        inst = small_instance().to_dict()
+        out = parse_payload({"text": self.TEXT, "instance": inst})
+        inst["rules"] = out["rules"]
+        solved = solve_payload({"instance": inst, "options": dict(FAST)})
+        self.assertIn("score", solved)
+
+    def test_the_whole_response_survives_json(self):
+        out = parse_payload({"text": self.TEXT})
+        self.assertEqual(json.loads(json.dumps(out)), out)
+
+
 class TestValidateEndpoint(unittest.TestCase):
     def test_a_workable_instance_passes(self):
         out = validate_payload(payload(university_instance(num_days=14,
@@ -190,6 +221,17 @@ class TestRejections(unittest.TestCase):
 
     def test_body_must_be_an_object(self):
         self.assert_error(solve_payload, ["not", "a", "dict"])
+
+    def test_rules_as_text_must_actually_be_text(self):
+        self.assert_error(parse_payload, {"text": ["one rule per line"]}, field="text")
+
+    def test_empty_text_is_refused_rather_than_read_as_no_rules(self):
+        self.assert_error(parse_payload, {"text": "   \n  "}, field="text",
+                          pattern="empty")
+
+    def test_a_flood_of_text_is_refused_with_the_limit(self):
+        self.assert_error(parse_payload, {"text": "x" * 60_000}, field="text",
+                          pattern="limit is 50000")
 
     def test_instance_must_be_an_object(self):
         self.assert_error(solve_payload, {"instance": "employees please"},
@@ -268,7 +310,7 @@ class TestDispatch(unittest.TestCase):
 
     def test_every_endpoint_is_reachable_through_handle(self):
         self.assertEqual(set(ENDPOINTS),
-                         {"solve", "evaluate", "repair", "schema", "validate"})
+                         {"solve", "evaluate", "repair", "schema", "validate", "parse"})
         self.assertIn("rule_types", handle("schema", {}))
 
     def test_an_unknown_endpoint_lists_the_real_ones(self):

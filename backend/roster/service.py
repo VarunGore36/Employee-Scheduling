@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from . import report
+from . import parse, report
 from .rules import REGISTRY, RuleSet
 from .ruleinfo import form_schema
 from .schema import Instance
@@ -232,12 +232,32 @@ def validate_payload(payload: dict) -> dict:
     }
 
 
+MAX_TEXT_CHARS = 50_000
+
+
+def parse_payload(payload: dict) -> dict:
+    """``POST /parse``. Rules as free text, read into drafts for the admin to confirm."""
+    if not isinstance(payload, dict):
+        raise ServiceError("request body must be a JSON object")
+    text = payload.get("text", "")
+    if not isinstance(text, str):
+        raise ServiceError("'text' must be a string", "text")
+    if not text.strip():
+        raise ServiceError("'text' is empty; send the rules as they were written", "text")
+    if len(text) > MAX_TEXT_CHARS:
+        raise ServiceError(f"'text' is {len(text)} characters; the limit is "
+                           f"{MAX_TEXT_CHARS}", "text")
+    inst = _instance_from(payload) if payload.get("instance") is not None else None
+    return parse.parse_payload(text, inst)
+
+
 ENDPOINTS = {
     "solve": solve_payload,
     "evaluate": evaluate_payload,
     "repair": repair_payload,
     "schema": schema_payload,
     "validate": validate_payload,
+    "parse": parse_payload,
 }
 
 
