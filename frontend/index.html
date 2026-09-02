@@ -233,6 +233,86 @@ button.quiet:hover { border-color: var(--stamp); }
   overflow: hidden;
   clip: rect(0 0 0 0);
 }
+.dial {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0 0 20px;
+  font: 12px/1.4 var(--mono);
+  color: var(--slate);
+}
+.dial select {
+  font: 12px/1 var(--mono);
+  color: var(--ink);
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  padding: 8px 9px;
+  min-height: 34px;
+}
+.roll {
+  overflow: auto;
+  max-height: 66vh;
+  border: 1px solid var(--rule);
+  margin: 0 0 10px;
+}
+.roll table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font: 12px/1 var(--mono);
+}
+.roll th, .roll td {
+  height: 24px;
+  padding: 0 2px;
+  text-align: center;
+  font-weight: 400;
+  border-right: 1px solid rgba(169, 189, 178, 0.5);
+  border-bottom: 1px solid rgba(169, 189, 178, 0.5);
+}
+.roll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--sheet);
+  color: var(--slate);
+  font-size: 11px;
+}
+.roll tbody th, .roll tfoot th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--sheet);
+  text-align: left;
+  white-space: nowrap;
+  padding: 0 12px 0 8px;
+}
+.roll tfoot th, .roll tfoot td {
+  position: sticky;
+  bottom: 0;
+  background: var(--sheet);
+  border-top: 1px solid var(--ink);
+  color: var(--slate);
+}
+.roll tfoot th { z-index: 2; }
+.roll thead th:first-child { z-index: 3; left: 0; text-align: left; padding: 0 8px; }
+.roll tbody th i { font-style: normal; color: var(--slate); margin-right: 8px; }
+.roll .day { width: 26px; }
+.roll .rest { background: rgba(179, 36, 28, 0.06); }
+.roll thead .rest { color: var(--red); }
+.roll .off { color: var(--rule); }
+.roll .night { color: var(--stamp); }
+.roll .sum {
+  width: 34px;
+  background: rgba(91, 63, 168, 0.05);
+  font-variant-numeric: tabular-nums;
+}
+.key {
+  font: 11px/1.7 var(--mono);
+  color: var(--slate);
+  margin: 0 0 22px;
+  max-width: 78ch;
+}
+.key .night { color: var(--stamp); }
 @media (max-width: 760px) {
   .register { grid-template-columns: 1fr; }
   .stub {
@@ -273,6 +353,7 @@ button.quiet:hover { border-color: var(--stamp); }
     <button type="button" data-go="shifts"><span class="no">3</span>Shifts</button>
     <button type="button" data-go="rules"><span class="no">4</span>Rules</button>
     <button type="button" data-go="check"><span class="no">5</span>Check</button>
+    <button type="button" data-go="roster"><span class="no">6</span>Roster</button>
   </nav>
 
   <div class="sheet">
@@ -311,6 +392,14 @@ button.quiet:hover { border-color: var(--stamp); }
         qualified and free.</p>
       <div data-fill="check"></div>
     </section>
+
+    <section id="s-roster" hidden aria-labelledby="h-roster">
+      <h2 id="h-roster">Roster</h2>
+      <p class="lede">Every duty covered first, then the rest of the time spent
+        trading the soft rules against each other. What the engine gave up is
+        listed underneath, rule by rule.</p>
+      <div data-fill="roster"></div>
+    </section>
   </div>
 </main>
 
@@ -326,7 +415,8 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
                 "August", "September", "October", "November", "December"];
 const base = location.protocol.startsWith("http") ? "" : "http://127.0.0.1:8000";
 const token = new URLSearchParams(location.search).get("token") || "";
-const state = { instance: null, health: null, check: null, step: "period" };
+const state = { instance: null, health: null, check: null, solved: null,
+                seconds: 30, seed: 0, busy: false, step: "period" };
 const at = id => document.getElementById(id);
 const panel = name => document.querySelector('[data-fill="' + name + '"]');
 
@@ -406,9 +496,14 @@ function tally(rows) {
     "<li><b>" + esc(row[1]) + "</b>" + esc(row[0]) + "</li>").join("") + "</ul>";
 }
 
-function press(label, action, quiet) {
+function num(value) {
+  return value % 1 ? value.toFixed(1) : String(value);
+}
+
+function press(label, action, quiet, off) {
   return '<button class="' + (quiet ? "quiet" : "act") + '" type="button" ' +
-         'data-do="' + action + '">' + esc(label) + "</button>";
+         'data-do="' + action + '"' + (off ? " disabled" : "") + ">" +
+         esc(label) + "</button>";
 }
 
 function nothingYet(message, label, action) {
@@ -476,6 +571,78 @@ function shiftsPanel() {
                  (shift.counts_as_night ? " · counts as a night" : "") + " · " +
                  (needed[shift.id] || 0) + " needed this month"]));
 }
+
+function restDays(inst) {
+  const weekly = new Set(inst.horizon.weekend_days || []);
+  const shut = new Set(inst.horizon.holidays || []);
+  return iso => weekly.has((isoDate(iso).getDay() + 6) % 7) || shut.has(iso);
+}
+
+function budget() {
+  return '<div class="dial"><label for="budget">Time to spend searching</label>' +
+    '<select id="budget" data-set="seconds">' +
+    [15, 30, 60, 120].map(count => '<option value="' + count + '"' +
+      (count === state.seconds ? " selected" : "") + ">" + count +
+      " seconds</option>").join("") + "</select>" +
+    "<span>longer is better; 30 seconds is enough for a month this size</span></div>";
+}
+
+function grid(out) {
+  const inst = state.instance;
+  const resting = restDays(inst);
+  const shifts = {};
+  inst.shifts.forEach(shift => { shifts[shift.id] = shift; });
+  const load = {};
+  out.workload.forEach(person => { load[person.employee] = person; });
+  const dates = out.roster.dates;
+  const onDuty = dates.map(() => 0);
+
+  const heads = dates.map(iso => {
+    const off = resting(iso);
+    return '<th scope="col" class="day' + (off ? " rest" : "") + '" title="' +
+      esc(longDate(iso)) + (off ? " · rest day" : "") + '">' +
+      isoDate(iso).getDate() + "</th>";
+  });
+
+  const rows = out.roster.rows.map(row => {
+    const stats = load[row.employee] || {};
+    const cells = row.days.map((cell, index) => {
+      const iso = dates[index];
+      const mark = ["day"];
+      if (resting(iso)) mark.push("rest");
+      if (!cell) mark.push("off");
+      else if ((shifts[cell.shift] || {}).counts_as_night) mark.push("night");
+      if (cell) onDuty[index] += 1;
+      const said = cell
+        ? (shifts[cell.shift] || {}).name + " · " + cell.role + " · " + longDate(iso)
+        : longDate(iso) + " · off";
+      return '<td class="' + mark.join(" ") + '" title="' + esc(said) + '">' +
+        (cell ? esc(cell.shift) : "·") + "</td>";
+    }).join("");
+    return '<tr><th scope="row"><i>' + esc(row.employee) + "</i>" +
+      esc(stats.name || "") + "</th>" + cells +
+      ['<td class="sum">' + num(stats.duties || 0) + "</td>",
+       '<td class="sum">' + num(stats.hours || 0) + "</td>",
+       '<td class="sum">' + num(stats.nights || 0) + "</td>",
+       '<td class="sum">' + num(stats.weekends || 0) + "</td>"].join("") + "</tr>";
+  }).join("");
+
+  const feet = onDuty.map((count, index) =>
+    '<td class="day' + (resting(dates[index]) ? " rest" : "") + '">' + count +
+    "</td>").join("");
+  return '<div class="roll"><table><thead><tr>' +
+    '<th scope="col">' + esc(inst.name) + "</th>" + heads.join("") +
+    '<th scope="col" class="sum">d</th><th scope="col" class="sum">h</th>' +
+    '<th scope="col" class="sum">n</th><th scope="col" class="sum">w</th>' +
+    "</tr></thead><tbody>" + rows + "</tbody><tfoot><tr>" +
+    '<th scope="row">on duty</th>' + feet +
+    '<td class="sum" colspan="4">' + onDuty.reduce((a, b) => a + b, 0) +
+    "</td></tr></tfoot></table></div>" +
+    '<p class="key">M morning · E evening · <span class="night">N night</span> · ' +
+    "· off duty · shaded columns are weekends and holidays · " +
+    "d duties, h hours, n nights, w weekends worked · " +
+    "hover a cell for the post and the date</p>";
+}
 function rulesPanel() {
   const inst = state.instance;
   if (!inst) return nothingYet("The rules arrive with the month.", OPEN_IT, "sample");
@@ -515,8 +682,75 @@ function checkPanel() {
     press("Run the check again", "check", true);
 }
 
+function breaches(out) {
+  const labels = {};
+  state.instance.rules.forEach(rule => { labels[rule.id] = rule.label; });
+  const groups = {};
+  out.score.violations.forEach(breach => {
+    const group = groups[breach.rule_id] || (groups[breach.rule_id] =
+      { id: breach.rule_id, hard: breach.severity === "hard", seen: 0, cost: 0,
+        says: [] });
+    group.seen += 1;
+    group.cost += breach.cost;
+    if (group.says.length < 3) {
+      group.says.push((breach.employee ? breach.employee + " — " : "") +
+                      breach.message);
+    }
+  });
+  const worst = Object.keys(groups).map(id => groups[id]).sort((one, two) =>
+    (Number(two.hard) - Number(one.hard)) || (two.cost - one.cost));
+  if (!worst.length) {
+    return ledger([["every rule", "nothing given up — the whole rule set holds"]]);
+  }
+  return ledger(worst.map(group => [
+    group.hard ? "hard" : "soft",
+    (labels[group.id] || group.id) + " · " + group.seen +
+      (group.seen === 1 ? " breach" : " breaches") + " · penalty " +
+      num(group.cost) + " · " + group.says.join("; ") +
+      (group.seen > group.says.length ? "; and " + (group.seen - group.says.length) +
+       " more" : ""),
+    group.hard ? "bad" : ""
+  ]));
+}
+
+function rosterPanel() {
+  if (!state.instance) return nothingYet("There is no month to roster yet.",
+                                         OPEN_IT, "sample");
+  const out = state.solved;
+  if (!out) {
+    return '<div class="empty"><p>The engine covers every duty first, then spends ' +
+      "whatever time it is given trading the soft rules against each other — the " +
+      "fairness of the spread, nights, weekends, requests — and reports exactly " +
+      "what it gave up.</p>" + budget() +
+      press(state.busy ? "Searching…" : "Generate the roster", "solve", false,
+            state.busy) + "</div>";
+  }
+  const score = out.score;
+  return tally([[score.feasible ? "legal roster" : "not a legal roster",
+                 score.feasible ? "Yes" : "No"],
+                ["hard breaches", score.hard_violations],
+                ["soft penalty", num(score.cost)],
+                ["busiest minus quietest", out.spread.duties + " duties"]]) +
+    budget() +
+    press(state.busy ? "Searching…" : "Generate again", "solve", true, state.busy) +
+    grid(out) +
+    ledger([
+      ["Search", out.search.engine + " · seed " + out.search.options.seed],
+      ["Time", num(out.search.seconds) + "s over " +
+               out.search.iterations.toLocaleString() + " moves"],
+      ["Cost", "started at " + num(out.search.construction_cost) + ", ended at " +
+               num(out.search.cost)],
+      ["Coverage", out.coverage.under + " duties short · " + out.coverage.over +
+                   " overstaffed"],
+      ["Spread", "duties " + out.spread.duties + " · nights " + out.spread.nights +
+                 " · weekends " + out.spread.weekends + " · hours " +
+                 num(out.spread.hours)]
+    ]) +
+    breaches(out);
+}
+
 const PANELS = { period: periodPanel, staff: staffPanel, shifts: shiftsPanel,
-                 rules: rulesPanel, check: checkPanel };
+                 rules: rulesPanel, check: checkPanel, roster: rosterPanel };
 
 function render() {
   const had = document.activeElement;
@@ -564,10 +798,12 @@ async function loadSample() {
     const out = await api("/sample");
     state.instance = out.instance;
     state.check = null;
+    state.solved = null;
     render();
     say(state.instance.employees.length + " staff over " +
         state.instance.horizon.num_days + " days.",
-        "Steps 2 to 5 are open. Step 5 asks whether the month is possible.");
+        "Steps 2 to 4 read it back. Step 5 asks whether the month is possible, " +
+        "step 6 builds it.");
   } catch (err) {
     say("Could not open the sample month.", err.message, "bad");
   }
@@ -589,16 +825,57 @@ async function runCheck() {
   }
 }
 
+async function runSolve() {
+  if (!state.instance || state.busy) return;
+  state.busy = true;
+  state.seed += 1;
+  render();
+  const began = Date.now();
+  const counting = setInterval(() => {
+    say("Searching… " + Math.round((Date.now() - began) / 1000) + "s of about " +
+        state.seconds + ".", "Every duty is covered first, then the soft rules " +
+        "are traded against each other.");
+  }, 1000);
+  try {
+    const out = await api("/solve", {
+      instance: state.instance,
+      options: { seed: state.seed, max_seconds: state.seconds }
+    });
+    state.solved = out;
+    render();
+    const score = out.score;
+    say(score.feasible ? "A legal roster." : "No legal roster yet.",
+        score.hard_violations + " hard, " + score.soft_violations +
+        " soft · penalty " + num(score.cost) + " · " + num(out.search.seconds) +
+        "s · seed " + out.search.options.seed,
+        score.feasible ? "" : "bad");
+  } catch (err) {
+    say("The search did not run.", err.message, "bad");
+  } finally {
+    clearInterval(counting);
+    state.busy = false;
+    render();
+  }
+}
+
 at("stub").addEventListener("click", event => {
   const button = event.target.closest("button[data-go]");
   if (button && !button.disabled) goTo(button.dataset.go);
 });
 
+document.querySelector(".sheet").addEventListener("change", event => {
+  const field = event.target.closest("[data-set]");
+  if (field && field.dataset.set === "seconds") {
+    state.seconds = Number(field.value);
+  }
+});
+
 document.querySelector(".sheet").addEventListener("click", event => {
   const button = event.target.closest("button[data-do]");
-  if (!button) return;
+  if (!button || button.disabled) return;
   if (button.dataset.do === "sample") loadSample();
   if (button.dataset.do === "check") runCheck();
+  if (button.dataset.do === "solve") runSolve();
 });
 
 at("recheck").addEventListener("click", checkEngine);

@@ -43,13 +43,16 @@ re-audited by a second implementation of the rules that reads only the output.
 The same month solved through the API in 25 seconds returns the same verdict.
 
 The admin's page has been started. `frontend/index.html` is served by
-`roster.cli serve`, and its first pass walks the month in five steps — period,
-staff, shifts, rules, check — opening the sample month from the API, reading it
-back in the admin's terms, and asking `POST /validate` whether the month is
-possible at all before anybody waits on a search.
+`roster.cli serve`, and it walks the month in six steps — period, staff, shifts,
+rules, check, roster. It opens the sample month from the API, reads it back in the
+admin's terms, asks `POST /validate` whether the month is possible at all, and
+then generates it: the duty register itself, dates across and staff down, with
+weekends shaded, nights in violet, each person's duties, hours, nights and
+weekends ruled off at the right edge, a head count under every day, and
+underneath it every rule the engine had to give ground on — grouped by rule, worst
+first, with the penalty each one cost.
 
-Still to come: generating the roster from the page, and the rule questionnaire
-the admin fills in.
+Still to come: the rule questionnaire the admin fills in, and CSV export.
 
 ## Running it
 
