@@ -52,6 +52,22 @@ weekends ruled off at the right edge, a head count under every day, and
 underneath it every rule the engine had to give ground on — grouped by rule, worst
 first, with the penalty each one cost.
 
+That register can be searched and questioned rather than only read. A name or a
+staff number narrows the sheet to whoever matches, a role narrows it to the people
+holding that role, and one checkbox narrows it to the people a rule was actually
+broken for — while the head count under each day keeps counting the whole roster,
+because it describes the month and not the search. Pointing at a duty rules a
+crosshair down its day and across its row and reads the duty out in the margin: who,
+which shift, which role, which date. Every rule in the breach report is pressable,
+and pressing one marks in red what it cost — the particular duties where somebody's
+rest was cut short, a whole row where somebody worked too many weekends, the head of
+a day that went understaffed — with a line in the margin saying in words how many
+duties and how many people were marked, and saying so plainly when the search has
+hidden them. A breach about the month as a whole admits that instead of pretending
+to point at a cell. Opening a name gives that person's month on its own slip: the
+roles they hold, their contract, their longest run, the shifts they worked, their
+thirty-one days in a strip, and every rule broken on their account.
+
 Step four is the questionnaire. The page asks `GET /schema` what the engine
 understands and builds the form from the answer, so a rule type added to the
 engine appears in the page without the page being touched: 25 kinds grouped into
@@ -65,8 +81,17 @@ engine would refuse never enters the month; the refusal appears next to the fiel
 in the engine's own words, and the register of rules and the feasibility check on
 step five stay in step with each other.
 
-Still to come: pasting rules as free prose into the questionnaire for review, and
-CSV export.
+Rules can also be pasted in as the officials wrote them. The same step takes the
+circular a line at a time, sends it to `POST /parse` with the month, and lays the
+reading out as proposals: what each line was quoted as, what rule it would become
+in the admin's own terms, every assumption the reading made, and how sure it was.
+A proposal can be accepted as it stands, opened in the questionnaire and corrected
+first, or discarded; a line that could not be read says why and offers the nearest
+kinds to fill in by hand instead. Nothing reaches the register without being put to
+the engine, and the officials' own wording becomes the label the breach report will
+use, so what comes back reads like the circular rather than like a rule type.
+
+Still to come: CSV export and print styles.
 
 ## Running it
 
@@ -115,7 +140,10 @@ Where a sentence cannot be held honestly, it is refused with the reason rather
 than guessed at: a group that is not in the staff data, a staff number nobody
 has, a date outside the month, a daily hours cap that is really a shift length.
 A dozen refusals of this kind are covered by tests. The drafts are the admin's to
-accept, edit or drop — the structured rules stay the single source of truth.
+accept, edit or drop — the structured rules stay the single source of truth. On the
+page they arrive as proposals on step four, and a ten-line circular put through the
+running server read eight lines, took them onto a 33-rule month and generated a
+legal roster from all 41.
 
 A rule that could never be satisfied is refused wherever it comes from — the
 questionnaire, prose, or a hand-written instance. Every parameter is held to the

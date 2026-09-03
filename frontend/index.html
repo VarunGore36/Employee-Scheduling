@@ -423,6 +423,180 @@ button.quiet:hover { border-color: var(--stamp); }
 }
 .entries .doing { margin: 0; gap: 6px; }
 .entries li[data-on="true"] { background: rgba(91, 63, 168, 0.07); }
+.memo textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 132px;
+  font: 13px/1.7 var(--mono);
+  color: var(--ink);
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  padding: 10px 12px;
+  resize: vertical;
+}
+.memo textarea:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
+.memo .tally { margin: 18px 0 0; }
+.props {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+.props li {
+  display: grid;
+  grid-template-columns: 30px 1fr max-content;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.props p { margin: 0; }
+.props .no { font: 11px/1.7 var(--mono); color: var(--slate); }
+.props .said { font: 13px/1.6 var(--mono); }
+.props .became, .props .took, .props .why {
+  display: block;
+  font: 12px/1.6 var(--mono);
+  margin-top: 3px;
+}
+.props .became { color: var(--slate); }
+.props .took { color: var(--stamp); }
+.props .why { color: var(--red); }
+.props .doing { margin: 0; gap: 6px; }
+.props li[data-on="true"] { background: rgba(91, 63, 168, 0.07); }
+.sift {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0 0 12px;
+  font: 12px/1.4 var(--mono);
+  color: var(--slate);
+}
+.sift input, .sift select {
+  font: 12px/1 var(--mono);
+  color: var(--ink);
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  padding: 8px 9px;
+  min-height: 34px;
+}
+.sift input[type="search"] { width: 190px; }
+.sift label { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.sift .box { min-height: 0; padding: 0; width: 15px; height: 15px; accent-color: var(--stamp); }
+.sift .count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.readout {
+  margin: 0 0 10px;
+  min-height: 22px;
+  padding: 4px 0 4px 11px;
+  border-left: 3px solid var(--stamp);
+  font: 12px/1.6 var(--mono);
+  color: var(--ink);
+}
+.readout[data-tone="bad"] { border-left-color: var(--red); color: var(--red); }
+.roll tbody td { position: relative; }
+.roll tbody tr:hover td { background: rgba(91, 63, 168, 0.08); }
+.roll tbody tr:hover th { background: #e9e9ef; }
+.roll .col { background: rgba(91, 63, 168, 0.08); }
+.roll thead th.col, .roll tfoot td.col { background: #e6e0f4; color: var(--ink); }
+.roll td.col:hover { box-shadow: inset 0 0 0 1px var(--stamp); }
+.roll tbody tr td.lit {
+  background: rgba(179, 36, 28, 0.16);
+  box-shadow: inset 0 0 0 1px var(--red);
+  color: var(--red);
+  animation: strike 520ms ease-out;
+}
+.roll tbody th[data-lit="true"] { box-shadow: inset 3px 0 0 var(--red); }
+.roll thead th[data-lit="true"], .roll tfoot td[data-lit="true"] {
+  color: var(--red);
+  box-shadow: inset 0 -3px 0 var(--red);
+}
+.roll tbody th[data-on="true"] { box-shadow: inset 3px 0 0 var(--stamp); }
+.roll tbody th[data-on="true"][data-lit="true"] {
+  box-shadow: inset 3px 0 0 var(--stamp), inset 6px 0 0 var(--red);
+}
+@keyframes strike { from { background: rgba(179, 36, 28, 0.6); } }
+.roll .name {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.roll .name:hover { color: var(--stamp); }
+.roll thead i { font-style: normal; display: block; font-size: 9px; color: var(--rule); }
+.roll thead th { height: 34px; line-height: 1.3; }
+.roll .name i { margin: 0; }
+.roll thead .rest i { color: var(--red); }
+.card .strip { display: flex; flex-wrap: wrap; gap: 3px; margin: 16px 0 0; }
+.card .strip span {
+  width: 27px;
+  padding: 3px 0 4px;
+  text-align: center;
+  font: 12px/1.2 var(--mono);
+  border: 1px solid var(--rule);
+  color: var(--slate);
+}
+.card .strip span i { font-style: normal; display: block; font-size: 9px; color: var(--rule); }
+.card .strip span[data-shift="N"] { color: var(--stamp); border-color: var(--stamp); }
+.card .strip span[data-rest="true"] { background: rgba(179, 36, 28, 0.06); }
+.card .strip span[data-lit="true"] { border-color: var(--red); color: var(--red); }
+.minor {
+  font: 400 13px/1 var(--display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--slate);
+  margin: 0 0 10px;
+}
+.none {
+  font: 13px/1.7 var(--body);
+  color: var(--slate);
+  margin: 0 0 22px;
+  padding: 14px 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.breaks {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  max-width: 900px;
+}
+.breaks li { border-bottom: 1px solid var(--rule); }
+.breaks button {
+  display: grid;
+  grid-template-columns: 54px 1fr max-content;
+  gap: 4px 14px;
+  align-items: baseline;
+  width: 100%;
+  padding: 10px 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.breaks button:hover { background: rgba(91, 63, 168, 0.06); }
+.breaks li[data-on="true"] { background: rgba(91, 63, 168, 0.1); }
+.breaks .chip { align-self: start; }
+.breaks .says {
+  display: block;
+  font: 12px/1.6 var(--mono);
+  color: var(--slate);
+  margin-top: 3px;
+}
+.breaks .cost {
+  font: 12px/1.6 var(--mono);
+  color: var(--slate);
+  font-variant-numeric: tabular-nums;
+}
 @media (max-width: 760px) {
   .register { grid-template-columns: 1fr; }
   .stub {
@@ -445,6 +619,10 @@ button.quiet:hover { border-color: var(--stamp); }
   .sheet { padding: 20px 18px 28px; }
   .field { grid-template-columns: 1fr; }
   .entries li { grid-template-columns: 1fr; }
+  .sift .count { margin-left: 0; }
+  .sift input[type="search"] { width: 100%; }
+  .breaks button { grid-template-columns: 54px 1fr; }
+  .breaks .cost { grid-column: 2; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
@@ -494,8 +672,9 @@ button.quiet:hover { border-color: var(--stamp); }
       <h2 id="h-rules">Rules</h2>
       <p class="lede">Hard rules must hold for a roster to be legal. Soft rules
         are preferences and fairness goals, traded against each other by weight.
-        Add, edit or drop them here — the engine is asked to accept every change
-        before it is kept.</p>
+        Fill them in one at a time, or paste the officials' own wording and take
+        the proposals it reads back — either way the engine is asked to accept
+        every change before it is kept.</p>
       <div data-fill="rules"></div>
     </section>
 
@@ -531,7 +710,9 @@ const base = location.protocol.startsWith("http") ? "" : "http://127.0.0.1:8000"
 const token = new URLSearchParams(location.search).get("token") || "";
 const state = { instance: null, health: null, check: null, solved: null,
                 schema: null, draft: null, dropped: null, dirty: false,
-                seconds: 30, seed: 0, busy: false, step: "period" };
+                memo: false, memoText: "", read: null, readError: "",
+                seconds: 30, seed: 0, busy: false, step: "period",
+                view: { find: "", role: "", only: false }, lit: "", who: "" };
 const at = id => document.getElementById(id);
 const panel = name => document.querySelector('[data-fill="' + name + '"]');
 
@@ -626,6 +807,7 @@ function nothingYet(message, label, action) {
          press(label, action) + "</div>";
 }
 const OPEN_IT = "Open the sample month";
+const HINT = "Point at any duty and it is read out here.";
 
 function periodPanel() {
   const inst = state.instance;
@@ -702,6 +884,39 @@ function budget() {
     "<span>longer is better; 30 seconds is enough for a month this size</span></div>";
 }
 
+function rosterRows(out) {
+  const view = state.view;
+  const find = view.find.trim().toLowerCase();
+  const load = {};
+  out.workload.forEach(person => { load[person.employee] = person; });
+  const hurt = out.violations_by_employee || {};
+  return out.roster.rows.filter(row => {
+    const stats = load[row.employee] || {};
+    if (view.role && (stats.roles || []).indexOf(view.role) < 0) return false;
+    if (view.only && !(hurt[row.employee] || []).length) return false;
+    if (!find) return true;
+    return (row.employee + " " + (stats.name || "")).toLowerCase().indexOf(find) >= 0;
+  });
+}
+
+function litDuties(out) {
+  const mark = { rows: {}, cells: {}, days: {}, month: false, seen: 0, people: 0 };
+  if (!state.lit) return mark;
+  (out.score.violations || []).forEach(one => {
+    if (one.rule_id !== state.lit) return;
+    mark.seen += 1;
+    const days = one.days || [];
+    if (one.employee && days.length) {
+      const held = mark.cells[one.employee] || (mark.cells[one.employee] = {});
+      days.forEach(day => { held[day] = true; });
+    } else if (one.employee) mark.rows[one.employee] = true;
+    else if (days.length) days.forEach(day => { mark.days[day] = true; });
+    else mark.month = true;
+  });
+  mark.people = Object.keys(mark.cells).length + Object.keys(mark.rows).length;
+  return mark;
+}
+
 function grid(out) {
   const inst = state.instance;
   const resting = restDays(inst);
@@ -710,40 +925,63 @@ function grid(out) {
   const load = {};
   out.workload.forEach(person => { load[person.employee] = person; });
   const dates = out.roster.dates;
+  const lit = litDuties(out);
   const onDuty = dates.map(() => 0);
+  out.roster.rows.forEach(row => row.days.forEach((cell, index) => {
+    if (cell) onDuty[index] += 1;
+  }));
 
-  const heads = dates.map(iso => {
+  const heads = dates.map((iso, index) => {
     const off = resting(iso);
-    return '<th scope="col" class="day' + (off ? " rest" : "") + '" title="' +
-      esc(longDate(iso)) + (off ? " · rest day" : "") + '">' +
-      isoDate(iso).getDate() + "</th>";
+    const when = isoDate(iso);
+    return '<th scope="col" class="day' + (off ? " rest" : "") + '" data-day="' +
+      index + '" data-lit="' + (lit.days[index] === true) + '" title="' +
+      esc(longDate(iso)) + (off ? " · rest day" : "") + '"><i>' +
+      DAYS[(when.getDay() + 6) % 7].slice(0, 2) + "</i>" + when.getDate() + "</th>";
   });
 
-  const rows = out.roster.rows.map(row => {
+  const shown = rosterRows(out);
+  const rows = shown.map(row => {
     const stats = load[row.employee] || {};
+    const held = lit.cells[row.employee] || {};
+    const all = lit.rows[row.employee] === true;
     const cells = row.days.map((cell, index) => {
       const iso = dates[index];
       const mark = ["day"];
       if (resting(iso)) mark.push("rest");
       if (!cell) mark.push("off");
       else if ((shifts[cell.shift] || {}).counts_as_night) mark.push("night");
-      if (cell) onDuty[index] += 1;
-      const said = cell
-        ? (shifts[cell.shift] || {}).name + " · " + cell.role + " · " + longDate(iso)
-        : longDate(iso) + " · off";
-      return '<td class="' + mark.join(" ") + '" title="' + esc(said) + '">' +
+      if (held[index] || (all && cell)) mark.push("lit");
+      const said = esc(row.employee + " " + (stats.name || "") + " · " + (cell
+        ? (shifts[cell.shift] || {}).name + " · " + cell.role
+        : "off duty") + " · " + longDate(iso));
+      return '<td class="' + mark.join(" ") + '" data-day="' + index +
+        '" data-say="' + said + '" title="' + said + '">' +
         (cell ? esc(cell.shift) : "·") + "</td>";
     }).join("");
-    return '<tr><th scope="row"><i>' + esc(row.employee) + "</i>" +
-      esc(stats.name || "") + "</th>" + cells +
+    const worked = num(stats.duties || 0) + " duties · " + num(stats.hours || 0) +
+      " hours · " + num(stats.nights || 0) + " nights · " +
+      num(stats.weekends || 0) + " weekends worked";
+    const open = state.who === row.employee;
+    return '<tr><th scope="row" data-on="' + open + '" data-lit="' +
+      (all || Object.keys(held).length > 0) + '"><button type="button" class="name"' +
+      ' data-do="who" data-id="' + esc(row.employee) + '" aria-expanded="' + open +
+      '" data-say="' + esc(row.employee + " " + (stats.name || "") + " · " + worked) +
+      '"><i>' + esc(row.employee) + "</i>" + esc(stats.name || "") +
+      "</button></th>" + cells +
       ['<td class="sum">' + num(stats.duties || 0) + "</td>",
        '<td class="sum">' + num(stats.hours || 0) + "</td>",
        '<td class="sum">' + num(stats.nights || 0) + "</td>",
        '<td class="sum">' + num(stats.weekends || 0) + "</td>"].join("") + "</tr>";
   }).join("");
 
+  if (!shown.length) {
+    return '<p class="none">No one on the sheet answers to that. ' +
+      "Clear the search to see the month again.</p>";
+  }
   const feet = onDuty.map((count, index) =>
-    '<td class="day' + (resting(dates[index]) ? " rest" : "") + '">' + count +
+    '<td class="day' + (resting(dates[index]) ? " rest" : "") + '" data-day="' +
+    index + '" data-lit="' + (lit.days[index] === true) + '">' + count +
     "</td>").join("");
   return '<div class="roll"><table><thead><tr>' +
     '<th scope="col">' + esc(inst.name) + "</th>" + heads.join("") +
@@ -756,7 +994,9 @@ function grid(out) {
     '<p class="key">M morning · E evening · <span class="night">N night</span> · ' +
     "· off duty · shaded columns are weekends and holidays · " +
     "d duties, h hours, n nights, w weekends worked · " +
-    "hover a cell for the post and the date</p>";
+    "the head count under each day is for the whole month, not the filtered sheet · " +
+    "point at a duty to read it in the margin, or open a name for that person's " +
+    "month</p>";
 }
 const FAMILIES = [
   ["Cover the posts", ["coverage", "headcount_per_shift", "fixed_assignment"]],
@@ -1044,15 +1284,21 @@ function blankDraft(type) {
   });
   return { type: type, severity: card ? card.default_severity : "soft",
            weight: 3, label: "", scope: { kind: "all", ids: [] },
-           params: params, editing: null, error: "" };
+           params: params, editing: null, fromLine: null, error: "" };
 }
 
-function freshId(type) {
-  const taken = {};
-  state.instance.rules.forEach(rule => { taken[rule.id] = true; });
-  if (!taken[type]) return type;
+function taken(extra) {
+  const seen = {};
+  state.instance.rules.forEach(rule => { seen[rule.id] = true; });
+  (extra || []).forEach(rule => { seen[rule.id] = true; });
+  return seen;
+}
+
+function freshId(type, seen) {
+  const held = seen || taken();
+  if (!held[type]) return type;
   let next = 2;
-  while (taken[type + "_" + next]) next += 1;
+  while (held[type + "_" + next]) next += 1;
   return type + "_" + next;
 }
 
@@ -1088,6 +1334,87 @@ function entries(rules) {
   }).join("") + "</ul>";
 }
 
+const MEMO_HINT = "Nobody may work more than 6 days in a row.\n" +
+  "Staff 07 is on leave from 15 to 19 September.\n" +
+  "Every night shift needs at least two people on site.\n" +
+  "LSG staff should not do more than 8 nights in the month.";
+
+function certainty(value) {
+  return Math.round((Number(value) || 0) * 100) + "% sure";
+}
+
+function drafted() {
+  return state.read ? state.read.drafts.filter(one => one.rule) : [];
+}
+
+function proposalOn(line) {
+  return (state.read ? state.read.drafts : []).filter(one => one.line === line)[0];
+}
+
+function nearest(types) {
+  return types.map(type => {
+    const card = typeCard(type);
+    return card ? card.label : type;
+  }).join(" · ");
+}
+
+function becomes(rule, confidence) {
+  const card = typeCard(rule.type);
+  const words = [scopeWords(rule.scope), paramWords(rule),
+                 rule.severity === "hard" ? "must hold"
+                                          : "a preference, weight " + num(rule.weight),
+                 certainty(confidence)];
+  return (card ? card.label : rule.type) + " · " +
+    words.filter(word => word).join(" · ");
+}
+
+function proposal(draft) {
+  const rule = draft.rule;
+  const open = Boolean(state.draft) && state.draft.fromLine === draft.line;
+  return '<li data-on="' + open + '"><p class="no">' + esc(draft.line) +
+    '</p><p><span class="said">' + esc(draft.text) + "</span>" +
+    (rule ? '<span class="became">' + esc(becomes(rule, draft.confidence)) +
+            "</span>" : "") +
+    (draft.problem ? '<span class="why">' + esc(draft.problem) + "</span>" : "") +
+    (draft.assumptions || []).map(took =>
+      '<span class="took">' + esc(took) + "</span>").join("") +
+    (!rule && (draft.suggestions || []).length
+      ? '<span class="became">nearest kinds — ' +
+        esc(nearest(draft.suggestions)) + "</span>" : "") +
+    '</p><p class="doing">' +
+    (rule ? press("Accept", "take-draft", false, state.busy, String(draft.line)) : "") +
+    press(rule ? "Edit first" : "Write it by hand", "open-draft", true,
+          state.busy || !state.schema, String(draft.line)) +
+    press("Discard", "skip-draft", true, state.busy, String(draft.line)) +
+    "</p></li>";
+}
+
+function memoPanel() {
+  const read = state.read;
+  return '<div class="slip memo"><h3>Rules as the officials wrote them</h3>' +
+    '<p class="note"><b>Paste the circular, one rule to a line.</b> Each line is ' +
+    "read into a proposal you can accept, correct or discard. Nothing reaches the " +
+    "register until you say so, and the wording is kept as the report's own." +
+    "</p>" +
+    (state.readError ? '<p class="warn">' + esc(state.readError) + "</p>" : "") +
+    '<div class="field"><span>The wording<i> as written</i></span>' +
+    '<textarea data-set="memo" rows="6" aria-label="The rules as the officials ' +
+    'wrote them" placeholder="' + esc(MEMO_HINT) + '">' + esc(state.memoText) +
+    "</textarea></div>" +
+    '<div class="doing">' +
+    press("Read these", "read-memo", false, state.busy) +
+    (drafted().length > 1
+      ? press("Accept all " + drafted().length, "take-all", true, state.busy) : "") +
+    press("Close", "memo", true, state.busy) + "</div>" +
+    (read ? tally([["statements read", read.counts.statements],
+                   ["became proposals", read.counts.drafted],
+                   ["could not be read", read.counts.unparsed]]) : "") +
+    (read && !read.drafts.length
+      ? '<p class="key">Every proposal has been dealt with.</p>' : "") +
+    (read && read.drafts.length
+      ? '<ul class="props">' + read.drafts.map(proposal).join("") + "</ul>" : "");
+}
+
 function rulesPanel() {
   const inst = state.instance;
   if (!inst) return nothingYet("The rules arrive with the month.", OPEN_IT, "sample");
@@ -1103,9 +1430,12 @@ function rulesPanel() {
       "from the engine, so nothing can be added until it answers again.</p>") +
     (state.draft ? slip() : '<div class="doing">' +
       press("Add a rule", "add-rule", false, state.busy || !state.schema) +
+      press(state.memo ? "Close the memo" : "Paste rules as prose", "memo", true,
+            state.busy) +
       (state.dropped
         ? press("Put back: " + state.dropped.label, "undrop", true, state.busy)
         : "") + "</div>") +
+    (state.memo ? memoPanel() : "") +
     entries(inst.rules);
 }
 
@@ -1155,15 +1485,91 @@ function breaches(out) {
   if (!worst.length) {
     return ledger([["every rule", "nothing given up — the whole rule set holds"]]);
   }
-  return ledger(worst.map(group => [
-    group.hard ? "hard" : "soft",
-    (labels[group.id] || group.id) + " · " + group.seen +
-      (group.seen === 1 ? " breach" : " breaches") + " · penalty " +
-      num(group.cost) + " · " + group.says.join("; ") +
-      (group.seen > group.says.length ? "; and " + (group.seen - group.says.length) +
-       " more" : ""),
-    group.hard ? "bad" : ""
-  ]));
+  return '<h3 class="minor">What the engine gave up · ' +
+    "point at a rule to find it on the sheet</h3>" +
+    '<ul class="breaks">' + worst.map(group => {
+      const on = state.lit === group.id;
+      const more = group.seen > group.says.length
+        ? "; and " + (group.seen - group.says.length) + " more" : "";
+      return '<li data-on="' + on + '"><button type="button" data-do="light"' +
+        ' data-id="' + esc(group.id) + '" aria-pressed="' + on + '">' +
+        '<span class="chip' + (group.hard ? " hard" : "") + '">' +
+        (group.hard ? "hard" : "soft") + "</span><span>" +
+        esc(labels[group.id] || group.id) +
+        '<span class="says">' + esc(group.says.join("; ") + more) + "</span></span>" +
+        '<span class="cost">' + group.seen +
+        (group.seen === 1 ? " breach" : " breaches") + " · penalty " +
+        num(group.cost) + "</span></button></li>";
+    }).join("") + "</ul>";
+}
+
+function sift(out) {
+  const view = state.view;
+  const roles = {};
+  out.workload.forEach(person =>
+    (person.roles || []).forEach(role => { roles[role] = true; }));
+  const shown = rosterRows(out).length;
+  return '<div class="sift"><label for="find">Find</label>' +
+    '<input id="find" type="search" data-set="find" autocomplete="off" value="' +
+    esc(view.find) + '" placeholder="staff number or name">' +
+    '<label for="holding">Holding</label>' +
+    '<select id="holding" data-set="role"><option value="">any role</option>' +
+    Object.keys(roles).sort().map(role => '<option value="' + esc(role) + '"' +
+      (role === view.role ? " selected" : "") + ">" + esc(role) +
+      "</option>").join("") + "</select>" +
+    '<label><input class="box" type="checkbox" data-set="only"' +
+    (view.only ? " checked" : "") + ">only staff a rule was broken for</label>" +
+    '<span class="count">' + shown + " of " + out.roster.rows.length +
+    " on the sheet</span></div>";
+}
+
+function personCard(out) {
+  const id = state.who;
+  const stats = out.workload.filter(one => one.employee === id)[0];
+  const row = out.roster.rows.filter(one => one.employee === id)[0];
+  if (!stats || !row) return "";
+  const inst = state.instance;
+  const who = inst.employees.filter(one => one.id === id)[0] || {};
+  const resting = restDays(inst);
+  const shifts = {};
+  inst.shifts.forEach(shift => { shifts[shift.id] = shift; });
+  const lit = litDuties(out);
+  const held = lit.cells[id] || {};
+  const all = lit.rows[id] === true;
+  const strip = row.days.map((cell, index) => {
+    const iso = out.roster.dates[index];
+    const shift = cell ? (shifts[cell.shift] || {}) : null;
+    return '<span data-shift="' + (shift && shift.counts_as_night ? "N" : "") +
+      '" data-rest="' + resting(iso) + '" data-lit="' +
+      (held[index] === true || (all && Boolean(cell))) + '" title="' +
+      esc(longDate(iso) + (cell ? " · " + shift.name + " · " + cell.role
+        : " · off duty")) + '"><i>' + isoDate(iso).getDate() + "</i>" +
+      (cell ? esc(cell.shift) : "·") + "</span>";
+  }).join("");
+  const hurt = (out.violations_by_employee || {})[id] || [];
+  const labels = {};
+  inst.rules.forEach(rule => { labels[rule.id] = rule.label; });
+  return '<div class="slip card"><h3>' + esc(id + " · " + (stats.name || "")) +
+    "</h3>" + '<p class="note">Holds <b>' +
+    esc((stats.roles || []).join(", ") || "no role") + "</b>" +
+    (who.contract ? " · " + esc(who.contract) : "") + " · longest run <b>" +
+    num(stats.longest_run || 0) + "</b> days · " +
+    esc(inst.shifts.map(shift => shift.name + " " +
+      num((stats.by_shift || {})[shift.id] || 0)).join(" · ")) + "</p>" +
+    tally([["duties", num(stats.duties || 0)], ["hours", num(stats.hours || 0)],
+           ["nights", num(stats.nights || 0)],
+           ["weekends worked", num(stats.weekends || 0)]]) +
+    '<div class="strip">' + strip + "</div>" +
+    (hurt.length
+      ? ledger(hurt.slice(0, 8).map(one => [
+          one.severity === "hard" ? "hard" : "soft",
+          (labels[one.rule_id] || one.rule_id) + " · " + one.message,
+          one.severity === "hard" ? "bad" : ""]))
+      : ledger([["nothing given up", "no rule was broken for this person"]])) +
+    (hurt.length > 8
+      ? '<p class="key">and ' + (hurt.length - 8) + " more against this person</p>"
+      : "") +
+    '<div class="doing">' + press("Close", "who", true, false, id) + "</div></div>";
 }
 
 function rosterPanel() {
@@ -1188,7 +1594,10 @@ function rosterPanel() {
                 ["busiest minus quietest", out.spread.duties + " duties"]]) +
     budget() +
     press(state.busy ? "Searching…" : "Generate again", "solve", true, state.busy) +
+    '<p class="readout" role="status" aria-live="polite">' + esc(HINT) + "</p>" +
+    sift(out) +
     grid(out) +
+    personCard(out) +
     ledger([
       ["Search", out.search.engine + " · seed " + out.search.options.seed],
       ["Time", num(out.search.seconds) + "s over " +
@@ -1209,7 +1618,11 @@ const PANELS = { period: periodPanel, staff: staffPanel, shifts: shiftsPanel,
 
 function heldBy(node) {
   if (!node || !node.dataset) return "";
-  if (node.dataset.do) return 'button[data-do="' + node.dataset.do + '"]';
+  if (node.dataset.do) {
+    return 'button[data-do="' + node.dataset.do + '"]' +
+      (/^[\w.:-]+$/.test(node.dataset.id || "")
+        ? '[data-id="' + node.dataset.id + '"]' : "");
+  }
   if (!node.dataset.set) return "";
   return '[data-set="' + node.dataset.set + '"]' +
     (node.dataset.name ? '[data-name="' + node.dataset.name + '"]' : "") +
@@ -1321,6 +1734,8 @@ async function runSolve() {
     });
     state.solved = out;
     state.dirty = false;
+    state.lit = "";
+    state.who = "";
     render();
     const score = out.score;
     say(score.feasible ? "A legal roster." : "No legal roster yet.",
@@ -1371,10 +1786,15 @@ async function commit(rules, told) {
   }
 }
 
-function startDraft() {
+function firstType() {
   const first = families()[0];
-  if (!first) return;
-  state.draft = blankDraft(first[1][0].type);
+  return first ? first[1][0].type : "";
+}
+
+function startDraft() {
+  const type = firstType();
+  if (!type) return;
+  state.draft = blankDraft(type);
   render();
 }
 
@@ -1426,7 +1846,11 @@ async function saveRule() {
   const found = rules.map(one => one.id).indexOf(rule.id);
   if (found >= 0) rules[found] = rule; else rules.push(rule);
   draft.error = "";
-  await commit(rules, (found >= 0 ? "Saved: " : "Added: ") + rule.label);
+  const from = draft.fromLine;
+  if (await commit(rules, (found >= 0 ? "Saved: " : "Added: ") + rule.label) && from) {
+    forget(from);
+    render();
+  }
 }
 
 async function dropRule(id) {
@@ -1449,6 +1873,181 @@ async function undrop() {
   render();
 }
 
+async function readMemo() {
+  const text = state.memoText.trim();
+  if (state.busy) return;
+  if (!text) {
+    state.readError = "Paste the wording first, one rule to a line.";
+    render();
+    return;
+  }
+  state.busy = true;
+  state.readError = "";
+  render();
+  try {
+    const out = await api("/parse", { text: text, instance: state.instance });
+    state.read = out;
+    const counts = out.counts;
+    say(counts.drafted + " of " + counts.statements + " statements read.",
+        counts.unparsed
+          ? counts.unparsed + " could not be read — the reason is beside each one."
+          : "Accept the ones the officials meant.",
+        counts.unparsed ? "bad" : "");
+  } catch (err) {
+    state.readError = plainly(err);
+    say("The engine could not read that.", plainly(err), "bad");
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
+function forget(line) {
+  if (!state.read) return;
+  state.read.drafts = state.read.drafts.filter(one => one.line !== line);
+}
+
+function asRule(rule, seen) {
+  const id = rule.id && !seen[rule.id] ? rule.id : freshId(rule.type, seen);
+  seen[id] = true;
+  return {
+    id: id,
+    type: rule.type,
+    severity: rule.severity,
+    weight: rule.severity === "hard" ? 1 : (Number(rule.weight) || 1),
+    scope: { kind: (rule.scope && rule.scope.kind) || "all",
+             ids: ((rule.scope && rule.scope.ids) || []).slice() },
+    params: rule.params || {},
+    label: (rule.label || "").trim() || rule.type
+  };
+}
+
+async function takeDraft(line) {
+  const found = proposalOn(line);
+  if (!found || !found.rule || state.busy) return;
+  const rule = asRule(found.rule, taken());
+  if (await commit(state.instance.rules.concat([rule]), "Accepted: " + rule.label)) {
+    forget(line);
+    render();
+  }
+}
+
+async function takeAll() {
+  const ready = drafted();
+  if (!ready.length || state.busy) return;
+  const seen = taken();
+  const rules = ready.map(one => asRule(one.rule, seen));
+  if (await commit(state.instance.rules.concat(rules),
+                   "Accepted " + rules.length + " proposals.")) {
+    ready.forEach(one => forget(one.line));
+    render();
+  }
+}
+
+function slipFrom(line) {
+  const found = proposalOn(line);
+  if (!found || state.busy) return;
+  const rule = found.rule;
+  const suggested = (found.suggestions || []).filter(type => typeCard(type))[0];
+  const type = rule ? rule.type : (suggested || firstType());
+  if (!type) return;
+  const draft = blankDraft(type);
+  draft.fromLine = line;
+  draft.label = ((rule && rule.label) || found.text || "").trim();
+  if (rule) {
+    draft.severity = rule.severity;
+    if (rule.severity === "soft") draft.weight = rule.weight;
+    draft.scope = { kind: (rule.scope && rule.scope.kind) || "all",
+                    ids: ((rule.scope && rule.scope.ids) || []).slice() };
+    Object.keys(rule.params || {}).forEach(name => {
+      const value = rule.params[name];
+      draft.params[name] = Array.isArray(value) ? value.slice() : value;
+    });
+  } else {
+    draft.error = "Nothing was read from this line, so nothing is filled in but " +
+      "the wording. Set it out by hand.";
+  }
+  state.draft = draft;
+  render();
+}
+
+function skipDraft(line) {
+  const found = proposalOn(line);
+  if (!found || state.busy) return;
+  if (state.draft && state.draft.fromLine === line) state.draft = null;
+  forget(line);
+  say("Discarded: " + found.text, "Nothing in the month changed.");
+  render();
+}
+
+function readout(text, tone) {
+  const note = document.querySelector(".readout");
+  if (!note) return;
+  note.textContent = text || HINT;
+  note.dataset.tone = tone || "";
+}
+
+function crosshair(cell) {
+  const roll = document.querySelector(".roll");
+  if (!roll || !roll.querySelectorAll) return;
+  Array.prototype.forEach.call(roll.querySelectorAll(".col"),
+                               node => node.classList.remove("col"));
+  const day = cell && cell.dataset ? cell.dataset.day : undefined;
+  if (day === undefined) return;
+  Array.prototype.forEach.call(roll.querySelectorAll('[data-day="' + day + '"]'),
+                               node => node.classList.add("col"));
+}
+
+function lightUp(id) {
+  const out = state.solved;
+  if (!out) return;
+  state.lit = state.lit === id ? "" : id;
+  render();
+  if (!state.lit) {
+    readout("");
+    return;
+  }
+  const rule = state.instance.rules.filter(one => one.id === id)[0] || {};
+  const label = rule.label || id;
+  const mark = litDuties(out);
+  const days = Object.keys(mark.days).length;
+  if (mark.month || (!mark.people && !days)) {
+    readout(label + " — this breach is about the month as a whole, not any " +
+            "particular duty, so nothing is marked on the sheet.");
+    return;
+  }
+  const held = Object.keys(mark.cells);
+  const whole = Object.keys(mark.rows).length;
+  const duties = held.reduce((sum, who) => sum + Object.keys(mark.cells[who]).length, 0);
+  const parts = [];
+  if (duties) {
+    parts.push(duties + (duties === 1 ? " duty" : " duties") + " held by " +
+               held.length + (held.length === 1 ? " person" : " people"));
+  }
+  if (whole) {
+    parts.push("every duty held by " + whole + (whole === 1 ? " person" : " people"));
+  }
+  if (days) parts.push(days + (days === 1 ? " day" : " days") + " at the head of the sheet");
+  const first = document.querySelector('.roll [data-lit="true"]');
+  readout(label + " — marked in red: " + parts.join(" · ") +
+          (first ? "." : ", but the sheet is filtered and none of them are showing."),
+          "bad");
+  const seek = document.querySelector(".roll td.lit");
+  if (seek && seek.scrollIntoView) {
+    seek.scrollIntoView({ block: "center", inline: "center" });
+  }
+}
+
+function showWho(id) {
+  if (!state.solved) return;
+  state.who = state.who === id ? "" : id;
+  render();
+  const card = document.querySelector(".card");
+  if (state.who && card && card.scrollIntoView) {
+    card.scrollIntoView({ block: "nearest" });
+  }
+}
+
 at("stub").addEventListener("click", event => {
   const button = event.target.closest("button[data-go]");
   if (button && !button.disabled) goTo(button.dataset.go);
@@ -1459,12 +2058,30 @@ function setField(what, value, name, on) {
     state.seconds = Number(value);
     return false;
   }
+  if (what === "memo") {
+    state.memoText = value;
+    return false;
+  }
+  if (what === "find") {
+    state.view.find = value;
+    return true;
+  }
+  if (what === "role") {
+    state.view.role = value;
+    return true;
+  }
+  if (what === "only") {
+    state.view.only = Boolean(on);
+    return true;
+  }
   const draft = state.draft;
   if (!draft) return false;
   if (what === "type") {
     const kept = draft.editing;
+    const from = draft.fromLine;
     state.draft = blankDraft(value);
     state.draft.editing = kept;
+    state.draft.fromLine = from;
     return true;
   }
   if (what === "severity") { draft.severity = value; return true; }
@@ -1496,6 +2113,35 @@ document.querySelector(".sheet").addEventListener("change", event => {
   if (setField(field.dataset.set, value, field.dataset.name, field.checked)) render();
 });
 
+document.querySelector(".sheet").addEventListener("input", event => {
+  const memo = event.target.closest('[data-set="memo"]');
+  if (memo) {
+    state.memoText = memo.value;
+    return;
+  }
+  const find = event.target.closest('[data-set="find"]');
+  if (!find) return;
+  const caret = find.selectionStart;
+  state.view.find = find.value;
+  render();
+  const again = document.querySelector('[data-set="find"]');
+  if (again && again.setSelectionRange) {
+    again.focus();
+    again.setSelectionRange(caret, caret);
+  }
+});
+
+document.querySelector(".sheet").addEventListener("mouseover", event => {
+  const cell = event.target.closest("[data-say]");
+  crosshair(cell);
+  if (cell) readout(cell.dataset.say);
+});
+
+document.querySelector(".sheet").addEventListener("focusin", event => {
+  const cell = event.target.closest("[data-say]");
+  if (cell) readout(cell.dataset.say);
+});
+
 document.querySelector(".sheet").addEventListener("click", event => {
   const button = event.target.closest("button[data-do]");
   if (!button || button.disabled) return;
@@ -1509,6 +2155,14 @@ document.querySelector(".sheet").addEventListener("click", event => {
   if (doing === "edit-rule") editRule(button.dataset.id);
   if (doing === "drop-rule") dropRule(button.dataset.id);
   if (doing === "undrop") undrop();
+  if (doing === "memo") { state.memo = !state.memo; render(); }
+  if (doing === "read-memo") readMemo();
+  if (doing === "take-draft") takeDraft(Number(button.dataset.id));
+  if (doing === "take-all") takeAll();
+  if (doing === "open-draft") slipFrom(Number(button.dataset.id));
+  if (doing === "skip-draft") skipDraft(Number(button.dataset.id));
+  if (doing === "light") lightUp(button.dataset.id);
+  if (doing === "who") showWho(button.dataset.id);
 });
 
 at("recheck").addEventListener("click", checkEngine);
