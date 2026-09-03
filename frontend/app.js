@@ -9,7 +9,8 @@ const state = { instance: null, health: null, check: null, solved: null,
                 schema: null, draft: null, dropped: null, dirty: false,
                 memo: false, memoText: "", read: null, readError: "",
                 seconds: 30, seed: 0, busy: false, step: "period",
-                view: { find: "", role: "", only: false }, lit: "", who: "" };
+                view: { find: "", role: "", only: false }, lit: "", who: "",
+                edit: null, gone: null, staffFind: "", pick: "", pickFind: "" };
 const at = id => document.getElementById(id);
 const panel = name => document.querySelector('[data-fill="' + name + '"]');
 
@@ -78,6 +79,26 @@ function hours(minutes) {
   return (minutes % 60 ? (minutes / 60).toFixed(1) : minutes / 60) + "h";
 }
 
+function daysBetween(from, to) {
+  return Math.round((isoDate(to) - isoDate(from)) / 86400000);
+}
+
+function weekdayOf(iso) { return (isoDate(iso).getDay() + 6) % 7; }
+
+function realDate(iso) {
+  return /^\d{4}-\d\d-\d\d$/.test(String(iso || "")) &&
+         !isNaN(isoDate(iso).getDate());
+}
+
+function parseClock(text) {
+  const parts = String(text || "").split(":");
+  const hour = parseInt(parts[0], 10);
+  const minute = parseInt(parts[1] || "0", 10);
+  if (!isFinite(hour) || !isFinite(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
 function ledger(rows) {
   return '<dl class="ledger">' + rows.map(row =>
     "<dt" + (row[2] ? ' class="' + row[2] + '"' : "") + ">" + esc(row[0]) +
@@ -106,6 +127,149 @@ function nothingYet(message, label, action) {
 const OPEN_IT = "Open the sample month";
 const HINT = "Point at any duty and it is read out here.";
 
+function datedParams(type) {
+  const card = typeCard(type);
+  return (card ? card.params : []).filter(param =>
+    param.kind === "day" || param.kind === "days");
+}
+
+function demandByDay(inst) {
+  const byDay = {};
+  inst.demand.forEach(line => {
+    (byDay[line.day] || (byDay[line.day] = [])).push(line);
+  });
+  return byDay;
+}
+
+function shapeKey(lines) {
+  return (lines || []).map(line =>
+    line.shift + "/" + line.role + "/" + line.required).sort().join(",");
+}
+
+function twoShapes(inst) {
+  const byDay = demandByDay(inst);
+  const resting = restDays(inst);
+  const found = { working: null, weekend: null };
+  for (let day = 0; day < inst.horizon.num_days; day += 1) {
+    const kind = resting(addDays(inst.horizon.start, day)) ? "weekend" : "working";
+    const lines = byDay[day] || [];
+    if (found[kind] === null) found[kind] = lines;
+    else if (shapeKey(found[kind]) !== shapeKey(lines)) return null;
+  }
+  return found.working && found.weekend ? found : null;
+}
+
+function remapDemand(inst, span) {
+  const shapes = twoShapes(inst);
+  const resting = restDays({ horizon: span });
+  const byDay = demandByDay(inst);
+  const out = [];
+  const copy = (day, lines) => (lines || []).forEach(line => out.push({
+    day: day, shift: line.shift, role: line.role, required: line.required }));
+  for (let day = 0; day < span.num_days; day += 1) {
+    if (shapes) {
+      copy(day, shapes[resting(addDays(span.start, day)) ? "weekend" : "working"]);
+    } else {
+      let from = day;
+      while (from >= inst.horizon.num_days && from >= 7) from -= 7;
+      copy(day, byDay[from]);
+    }
+  }
+  return { demand: out, laid: Boolean(shapes),
+           how: shapes ? "the weekday and weekend levels follow the new calendar"
+                       : "each added day repeats the same weekday a week earlier" };
+}
+
+function moveRules(inst, delta, span) {
+  const kept = [], lost = [], moved = [];
+  let trimmed = 0;
+  const inside = iso => {
+    const off = daysBetween(span.start, iso);
+    return off >= 0 && off < span.num_days;
+  };
+  inst.rules.forEach(rule => {
+    const dated = datedParams(rule.type).filter(param =>
+      !blank((rule.params || {})[param.name]));
+    if (!dated.length) { kept.push(rule); return; }
+    const params = Object.assign({}, rule.params);
+    let gone = false;
+    dated.forEach(param => {
+      const value = params[param.name];
+      if (param.kind === "day") {
+        const to = addDays(value, delta);
+        if (inside(to)) params[param.name] = to; else gone = true;
+        return;
+      }
+      const all = value.map(iso => addDays(iso, delta));
+      const held = all.filter(inside);
+      if (!held.length) { gone = true; return; }
+      if (held.length < all.length) trimmed += 1;
+      params[param.name] = held;
+    });
+    if (gone) { lost.push(rule); return; }
+    moved.push(rule);
+    kept.push(Object.assign({}, rule, { params: params }));
+  });
+  return { rules: kept, lost: lost, moved: moved, trimmed: trimmed };
+}
+
+function periodTrial() {
+  const edit = state.edit;
+  const inst = state.instance;
+  if (!edit || !inst) return null;
+  const days = parseInt(edit.days, 10);
+  if (!realDate(edit.start) || !isFinite(days) || days < 1 || days > 62) return null;
+  const span = Object.assign({}, inst.horizon,
+                             { start: edit.start, num_days: days });
+  return { span: span, delta: daysBetween(inst.horizon.start, edit.start),
+           rules: moveRules(inst, daysBetween(inst.horizon.start, edit.start), span),
+           demand: remapDemand(inst, span) };
+}
+
+function periodWords(trial) {
+  const was = state.instance.horizon;
+  const span = trial.span;
+  const rows = [
+    ["Would run", longDate(span.start) + " to " +
+                  longDate(addDays(span.start, span.num_days - 1))],
+    ["First day", trial.delta === 0 ? "unchanged"
+      : Math.abs(trial.delta) + " day" + (Math.abs(trial.delta) === 1 ? "" : "s") +
+        " " + (trial.delta > 0 ? "later" : "earlier")],
+    ["Length", span.num_days === was.num_days ? "unchanged at " + was.num_days + " days"
+      : was.num_days + " days becomes " + span.num_days],
+    ["Demand", trial.demand.demand.length + " lines — " + trial.demand.how]
+  ];
+  const moved = trial.rules.moved.length;
+  rows.push(["Dated rules", moved
+    ? moved + " move with the month" +
+      (trial.rules.trimmed ? ", " + trial.rules.trimmed + " trimmed to fit" : "")
+    : "none of them carry a date"]);
+  if (trial.rules.lost.length) rows.push(["Would be dropped",
+    trial.rules.lost.map(rule => rule.label).join("; "), "bad"]);
+  return rows;
+}
+
+function periodSlip() {
+  const edit = state.edit;
+  const trial = periodTrial();
+  return '<div class="slip"><h3>Change the month</h3>' +
+    '<p class="note"><b>The month keeps its shape.</b> Dated rules — leave, days ' +
+    "asked off, duties already set — move with it, so each one still falls on the " +
+    "same day of the roster. The demand follows the new calendar, so weekends stay " +
+    "the quieter days. Nothing is kept unless the engine accepts the whole month.</p>" +
+    (edit.error ? '<p class="warn">' + esc(edit.error) + "</p>" : "") +
+    fieldRow("First day", true, '<input type="date" aria-label="First day" ' +
+      'data-set="edit" data-name="start" value="' + esc(edit.start) + '">') +
+    fieldRow("Days in the month", true,
+      numberField("Days in the month", "edit", "days", edit.days, "1", 1)) +
+    (trial ? ledger(periodWords(trial))
+      : '<p class="warn">Give a real first day and a length between 1 and 62 ' +
+        "days.</p>") +
+    '<div class="doing">' +
+    press("Apply the month", "save-period", false, state.busy || !trial) +
+    press("Cancel", "cancel-edit", true, state.busy) + "</div></div>";
+}
+
 function periodPanel() {
   const inst = state.instance;
   if (!inst) return nothingYet(
@@ -115,6 +279,7 @@ function periodPanel() {
   const span = inst.horizon;
   const weekend = (span.weekend_days || []).map(day => DAYS[day]).join(", ");
   const shut = span.holidays || [];
+  const open = state.edit && state.edit.kind === "period";
   return ledger([
     ["Instance", inst.name],
     ["First day", longDate(span.start)],
@@ -122,7 +287,121 @@ function periodPanel() {
     ["Days", span.num_days],
     ["Weekend", weekend || "none"],
     ["Holidays", shut.length ? shut.map(longDate).join("; ") : "none"]
-  ]) + press("Reload the sample month", "sample", true);
+  ]) + (open ? periodSlip() : '<div class="doing">' +
+    press("Change the month", "edit-period", false, state.busy || !state.schema) +
+    press("Reload the sample month", "sample", true, state.busy) + "</div>") +
+    (state.schema ? "" : '<p class="warn">The rule catalogue could not be read ' +
+      "from the engine, so a dated rule could not be moved safely and the month " +
+      "cannot be changed until the engine answers again.</p>");
+}
+
+function scopeRules(inst, id) {
+  return inst.rules.filter(rule => {
+    const scope = rule.scope || {};
+    return scope.kind === "employees" && (scope.ids || []).indexOf(id) >= 0;
+  });
+}
+
+function withoutPerson(inst, id) {
+  const rules = [], lost = [], trimmed = [];
+  inst.rules.forEach(rule => {
+    const scope = rule.scope || {};
+    if (scope.kind !== "employees" || (scope.ids || []).indexOf(id) < 0) {
+      rules.push(rule);
+      return;
+    }
+    const left = scope.ids.filter(one => one !== id);
+    if (!left.length) { lost.push(rule); return; }
+    trimmed.push(rule.id);
+    rules.push(Object.assign({}, rule, { scope: { kind: "employees", ids: left } }));
+  });
+  return { employees: inst.employees.filter(one => one.id !== id),
+           rules: rules, lost: lost, trimmed: trimmed };
+}
+
+function renameInRules(inst, from, to) {
+  return inst.rules.map(rule => {
+    const scope = rule.scope || {};
+    if (scope.kind !== "employees" || (scope.ids || []).indexOf(from) < 0) return rule;
+    return Object.assign({}, rule, { scope: { kind: "employees",
+      ids: scope.ids.map(one => one === from ? to : one) } });
+  });
+}
+
+function nextStaffId(inst) {
+  const seen = {};
+  let stem = "E", width = 2, most = 0;
+  inst.employees.forEach(person => {
+    seen[person.id] = true;
+    const parts = /^(\D*)(\d+)$/.exec(person.id);
+    if (!parts) return;
+    stem = parts[1];
+    width = Math.max(width, parts[2].length);
+    most = Math.max(most, parseInt(parts[2], 10));
+  });
+  let next = most + 1;
+  while (seen[stem + String(next).padStart(width, "0")]) next += 1;
+  return stem + String(next).padStart(width, "0");
+}
+
+function usualContract(inst) {
+  const count = {};
+  inst.employees.forEach(person => {
+    if (person.contract) count[person.contract] = (count[person.contract] || 0) + 1;
+  });
+  return Object.keys(count).sort((a, b) => count[b] - count[a])[0] || "permanent";
+}
+
+function personEdit(person) {
+  const inst = state.instance;
+  return { kind: "person",
+           was: person ? person.id : "",
+           id: person ? person.id : nextStaffId(inst),
+           name: person ? person.name || "" : "",
+           roles: person ? person.roles.slice() : [],
+           contract: person ? person.contract || "" : usualContract(inst),
+           error: "" };
+}
+
+function personSlip() {
+  const edit = state.edit;
+  const inst = state.instance;
+  const tied = edit.was ? scopeRules(inst, edit.was) : [];
+  const renaming = Boolean(edit.was) && edit.id !== edit.was;
+  return '<div class="slip"><h3>' +
+    (edit.was ? "Edit " + esc(edit.was) : "Add someone to the roll") + "</h3>" +
+    '<p class="note"><b>A staff number is how every rule names a person.</b> ' +
+    "Change it and the rules that name them are rewritten to match, so nothing is " +
+    "left pointing at somebody who is no longer on the roll. The roles decide which " +
+    "duties this person can be given, and the contract is what a rule scoped to a " +
+    "kind of employment will look for.</p>" +
+    (edit.error ? '<p class="warn">' + esc(edit.error) + "</p>" : "") +
+    fieldRow("Staff number", true,
+      textField("Staff number", "edit", edit.id, nextStaffId(inst), "id")) +
+    fieldRow("Name", false,
+      textField("Name", "edit", edit.name, "as it should read on the roster", "name")) +
+    fieldRow("Roles held", true, picksOf("Roles held", "roles", edit.roles,
+      inst.roles.map(role => [role.id, role.id, false, role.name]), "hold")) +
+    fieldRow("Contract", false, listField("Contract", "edit", "contract",
+      edit.contract, contracts(inst), "permanent")) +
+    (renaming && tied.length ? '<p class="note">' + tied.length + " rule" +
+      (tied.length === 1 ? " names " : "s name ") + esc(edit.was) +
+      " and will be rewritten to " + esc(edit.id) + ": " +
+      esc(tied.map(rule => rule.label).join("; ")) + "</p>" : "") +
+    '<div class="doing">' +
+    press(edit.was ? "Save" : "Add to the roll", "save-person", false, state.busy) +
+    press("Cancel", "cancel-edit", true, state.busy) + "</div></div>";
+}
+
+function personRow(person) {
+  const open = Boolean(state.edit) && state.edit.kind === "person" &&
+               state.edit.was === person.id;
+  return '<li data-on="' + open + '"><p><span class="chip">' + esc(person.id) +
+    "</span></p><p>" + esc(person.name || person.id) + '<span class="says">' +
+    esc((person.roles.join(", ") || "no role") +
+        (person.contract ? " · " + person.contract : "")) + "</span></p>" +
+    '<p class="doing">' + press("Edit", "edit-person", true, state.busy, person.id) +
+    press("Remove", "drop-person", true, state.busy, person.id) + "</p></li>";
 }
 
 function staffPanel() {
@@ -135,14 +414,240 @@ function staffPanel() {
     qualified[role] = (qualified[role] || 0) + 1;
   }));
   const doubling = inst.employees.filter(person => person.roles.length > 1).length;
+  const open = state.edit && state.edit.kind === "person";
+  const find = state.staffFind.trim().toLowerCase();
+  const shown = !find ? inst.employees : inst.employees.filter(person =>
+    (person.id + " " + (person.name || "")).toLowerCase().indexOf(find) >= 0);
   return tally([["on the roll", inst.employees.length],
                 ["roles", inst.roles.length],
                 ["hold more than one role", doubling]]) +
     ledger(inst.roles.map(role =>
       [role.id, role.name + " — " + qualified[role.id] + " qualified"])) +
-    ledger(inst.employees.map(person =>
-      [person.id, person.name + " · " + person.roles.join(", ") + " · " +
-                  person.contract]));
+    (open ? personSlip() : '<div class="doing">' +
+      press("Add someone", "add-person", false, state.busy) +
+      (state.gone ? press("Put " + state.gone.person.id + " back", "unremove",
+                          true, state.busy) : "") + "</div>") +
+    '<div class="sift"><label for="onroll">Find</label>' +
+    '<input id="onroll" type="search" data-set="staff-find" autocomplete="off" ' +
+    'value="' + esc(state.staffFind) + '" placeholder="staff number or name">' +
+    '<span class="count">' + (find ? shown.length + " of " +
+      inst.employees.length + " on the roll" : inst.employees.length +
+      " on the roll") + "</span></div>" +
+    (shown.length ? '<ul class="entries">' + shown.map(personRow).join("") + "</ul>"
+      : '<p class="none">Nobody on the roll answers to that.</p>');
+}
+
+function shiftEdit(shift) {
+  return { kind: "shift", id: shift.id, name: shift.name || "",
+           start: clock(shift.start_min),
+           hours: String(shift.duration_min / 60),
+           night: Boolean(shift.counts_as_night), error: "" };
+}
+
+function shiftTrial() {
+  const edit = state.edit;
+  const from = parseClock(edit.start);
+  const span = Math.round((parseFloat(edit.hours) || 0) * 60);
+  if (from === null || span < 15 || span > 1440) return null;
+  return { start_min: from, duration_min: span };
+}
+
+function shiftSlip() {
+  const edit = state.edit;
+  const trial = shiftTrial();
+  return '<div class="slip"><h3>Edit the ' + esc(edit.id) + " shift</h3>" +
+    '<p class="note"><b>The letter stays as it is.</b> Every line of demand and ' +
+    "every rule that names a shift is keyed to it, so renaming it would leave them " +
+    "pointing at nothing. The clock time, the length and whether it counts as a " +
+    "night are yours — and the night flag is what the night rules and the rest gaps " +
+    "are read against, not the hour on the clock.</p>" +
+    (edit.error ? '<p class="warn">' + esc(edit.error) + "</p>" : "") +
+    fieldRow("Name", false,
+      textField("Name", "edit", edit.name, edit.id, "name")) +
+    fieldRow("Starts at", true, '<input type="time" aria-label="Starts at" ' +
+      'data-set="edit" data-name="start" value="' + esc(edit.start) + '">') +
+    fieldRow("Hours long", true,
+      numberField("Hours long", "edit", "hours", edit.hours, "0.25", 0.25)) +
+    fieldRow("Counts as a night", false,
+      yesNo("Counts as a night", "night", edit.night, "edit-flag")) +
+    ledger([["Would run", trial
+      ? clock(trial.start_min) + " to " + clock(trial.start_min + trial.duration_min) +
+        (trial.start_min + trial.duration_min >= 1440 ? " the next day" : "") +
+        " · " + hours(trial.duration_min)
+      : "not a real time yet"],
+      ["Counts as", edit.night ? "a night shift" : "a day shift"]]) +
+    (trial ? "" : '<p class="warn">Give a clock time and a length between a ' +
+      "quarter of an hour and 24 hours.</p>") +
+    '<div class="doing">' +
+    press("Save the shift", "save-shift", false, state.busy || !trial) +
+    press("Cancel", "cancel-edit", true, state.busy) + "</div></div>";
+}
+
+function shiftRow(shift, needed) {
+  const open = Boolean(state.edit) && state.edit.kind === "shift" &&
+               state.edit.id === shift.id;
+  return '<li data-on="' + open + '"><p><span class="chip' +
+    (shift.counts_as_night ? " night" : "") + '">' + esc(shift.id) +
+    "</span></p><p>" + esc(shift.name || shift.id) + '<span class="says">' +
+    esc(clock(shift.start_min) + "–" + clock(shift.start_min + shift.duration_min) +
+        " · " + hours(shift.duration_min) +
+        (shift.counts_as_night ? " · counts as a night" : "") + " · " +
+        (needed[shift.id] || 0) + " needed this month") + "</span></p>" +
+    '<p class="doing">' + press("Edit", "edit-shift", true, state.busy, shift.id) +
+    "</p></li>";
+}
+
+const MARKS = { unavailable: "away", day_off_request: "asked off",
+                shift_off_request: "asked off", shift_request: "asked for",
+                fixed_assignment: "set duty" };
+
+function ruleReaches(rule, person) {
+  const scope = rule.scope || {};
+  if (!scope.kind || scope.kind === "all") return true;
+  if (scope.kind === "employees") return (scope.ids || []).indexOf(person.id) >= 0;
+  if (scope.kind === "roles") {
+    return (scope.ids || []).some(role => person.roles.indexOf(role) >= 0);
+  }
+  if (scope.kind === "contracts") return (scope.ids || []).indexOf(person.contract) >= 0;
+  return false;
+}
+
+function marksFor(inst, person) {
+  const marks = {};
+  inst.rules.forEach(rule => {
+    if (!MARKS[rule.type] || !ruleReaches(rule, person)) return;
+    const dated = datedParams(rule.type).filter(param =>
+      !blank((rule.params || {})[param.name]));
+    dated.forEach(param => {
+      const value = rule.params[param.name];
+      (param.kind === "day" ? [value] : value).forEach(iso => {
+        (marks[iso] || (marks[iso] = [])).push({
+          word: MARKS[rule.type], label: rule.label,
+          hard: rule.severity === "hard" });
+      });
+    });
+  });
+  return marks;
+}
+
+function dutiesFor(id) {
+  const out = state.solved;
+  if (!out) return null;
+  const row = out.roster.rows.filter(one => one.employee === id)[0];
+  if (!row) return {};
+  const byDate = {};
+  row.days.forEach((cell, index) => {
+    if (cell) byDate[out.roster.dates[index]] = cell;
+  });
+  return byDate;
+}
+
+function monthWeeks(span) {
+  const weeks = [];
+  let week = [];
+  for (let pad = 0; pad < weekdayOf(span.start); pad += 1) week.push(null);
+  for (let day = 0; day < span.num_days; day += 1) {
+    week.push(day);
+    if (week.length === 7) { weeks.push(week); week = []; }
+  }
+  if (week.length) {
+    while (week.length < 7) week.push(null);
+    weeks.push(week);
+  }
+  return weeks;
+}
+
+function shiftsBy(inst) {
+  const byId = {};
+  inst.shifts.forEach(shift => { byId[shift.id] = shift; });
+  return byId;
+}
+
+function monthCell(index, look) {
+  if (index === null) return '<td class="pad"></td>';
+  const iso = addDays(look.span.start, index);
+  const cell = look.duties ? look.duties[iso] : null;
+  const noted = look.marks[iso] || [];
+  const shift = cell ? (look.shifts[cell.shift] || {}) : null;
+  const said = [longDate(iso)];
+  if (cell) said.push((shift.name || cell.shift) + " " + clock(shift.start_min) +
+    "–" + clock(shift.start_min + shift.duration_min) + " as " + cell.role);
+  noted.forEach(one => said.push(one.word + " — " + one.label));
+  if (!cell && !noted.length) said.push(look.duties ? "no duty" : "nothing fixed yet");
+  return '<td class="' + (look.resting(iso) ? "rest" : "") + (cell ? " on" : "") +
+    (shift && shift.counts_as_night ? " night" : "") +
+    (noted.length ? " noted" : "") + '" title="' + esc(said.join(" · ")) + '">' +
+    "<i>" + isoDate(iso).getDate() + "</i>" +
+    (cell ? "<b>" + esc(cell.shift) + "</b><span>" +
+      esc(clock(shift.start_min) + "–" + clock(shift.start_min + shift.duration_min)) +
+      "</span><span>" + esc(cell.role) + "</span>" : "") +
+    noted.map(one => '<span class="mark' + (one.hard ? " firm" : "") + '">' +
+      esc(one.word) + "</span>").join("") + "</td>";
+}
+
+function personMonth(inst) {
+  const person = inst.employees.filter(one => one.id === state.pick)[0];
+  if (!person) return "";
+  const look = { span: inst.horizon, duties: dutiesFor(person.id),
+                 marks: marksFor(inst, person), shifts: shiftsBy(inst),
+                 resting: restDays(inst) };
+  const weekend = inst.horizon.weekend_days || [];
+  const load = state.solved
+    ? (state.solved.workload.filter(one => one.employee === person.id)[0] || null)
+    : null;
+  return '<div class="slip who"><h4>' + esc(person.id) + " · " +
+    esc(person.name || person.id) + "</h4>" +
+    '<p class="note">Holds <b>' + esc(person.roles.join(", ") || "no role") +
+    "</b>" + (person.contract ? " · " + esc(person.contract) : "") + " · " +
+    esc(longDate(inst.horizon.start)) + " to " +
+    esc(longDate(addDays(inst.horizon.start, inst.horizon.num_days - 1))) + "</p>" +
+    (load ? tally([["duties", num(load.duties || 0)],
+                   ["hours", num(load.hours || 0)],
+                   ["nights", num(load.nights || 0)],
+                   ["weekends worked", num(load.weekends || 0)],
+                   ["longest run", num(load.longest_run || 0) + " days"]]) : "") +
+    (look.duties ? "" : '<p class="key">No roster has been generated for this ' +
+      "month yet, so the calendar shows only what the rules already fix — leave, " +
+      "days asked off, duties already set. Generate on step 6 and the duties " +
+      "appear here.</p>") +
+    '<div class="cal"><table><thead><tr>' + DAYS.map((day, index) =>
+      '<th scope="col"' + (weekend.indexOf(index) >= 0 ? ' class="rest"' : "") +
+      ">" + day.slice(0, 3) + "</th>").join("") + "</tr></thead><tbody>" +
+    monthWeeks(inst.horizon).map(week => "<tr>" + week.map(index =>
+      monthCell(index, look)).join("") + "</tr>").join("") +
+    "</tbody></table></div>" +
+    '<p class="key">Days outside the month are hatched. Rest days are tinted, ' +
+    "nights are violet, and anything the rules already say about a day is printed " +
+    "on it in red.</p>" +
+    '<div class="doing">' + press("Close", "pick", true, state.busy, person.id) +
+    "</div></div>";
+}
+
+function personFinder(inst) {
+  const find = state.pickFind.trim().toLowerCase();
+  const hits = !find ? [] : inst.employees.filter(person =>
+    (person.id + " " + (person.name || "")).toLowerCase().indexOf(find) >= 0);
+  const most = hits.slice(0, 20);
+  return '<h3 class="minor">One person\'s month</h3>' +
+    '<div class="sift"><label for="look">Find</label>' +
+    '<input id="look" type="search" data-set="pick-find" autocomplete="off" ' +
+    'value="' + esc(state.pickFind) + '" placeholder="staff number or name">' +
+    (find ? '<span class="count">' + hits.length + " match" +
+      (hits.length === 1 ? "" : "es") + "</span>" : "") + "</div>" +
+    (find && !hits.length ? '<p class="none">Nobody on the roll answers to that.</p>'
+      : "") +
+    (most.length ? '<div class="hits">' + most.map(person =>
+      '<button class="quiet' + (state.pick === person.id ? " on" : "") + '" ' +
+      'type="button" data-do="pick" data-id="' + esc(person.id) + '" ' +
+      'aria-pressed="' + (state.pick === person.id) + '">' +
+      esc(person.id + " · " + (person.name || person.id)) + "</button>").join("") +
+      (hits.length > most.length ? '<span class="count">and ' +
+        (hits.length - most.length) + " more — narrow the search</span>" : "") +
+      "</div>" : "") +
+    (state.pick ? personMonth(inst) : '<p class="key">Look somebody up by name or ' +
+      "by staff number to see their whole month at once — every duty they hold, " +
+      "once a roster has been generated, and before that whatever the rules " +
+      "already fix about their days.</p>");
 }
 
 function shiftsPanel() {
@@ -155,15 +660,14 @@ function shiftsPanel() {
     needed[line.shift] = (needed[line.shift] || 0) + line.required;
     total += line.required;
   });
+  const open = state.edit && state.edit.kind === "shift";
   return tally([["shifts a day", inst.shifts.length],
                 ["person-shifts to fill", total],
                 ["demand lines", inst.demand.length]]) +
-    ledger(inst.shifts.map(shift =>
-      [shift.id, shift.name + " · " + clock(shift.start_min) + "–" +
-                 clock(shift.start_min + shift.duration_min) + " · " +
-                 hours(shift.duration_min) +
-                 (shift.counts_as_night ? " · counts as a night" : "") + " · " +
-                 (needed[shift.id] || 0) + " needed this month"]));
+    (open ? shiftSlip() : "") +
+    '<ul class="entries">' +
+    inst.shifts.map(shift => shiftRow(shift, needed)).join("") + "</ul>" +
+    personFinder(inst);
 }
 
 function restDays(inst) {
@@ -429,16 +933,25 @@ function numberField(label, set, name, value, step, least) {
     ' value="' + esc(blank(value) ? "" : value) + '">';
 }
 
-function picksOf(label, name, chosen, options) {
+function picksOf(label, name, chosen, options, set) {
   const on = {};
   (chosen || []).forEach(value => { on[value] = true; });
   return '<div class="picks" role="group" aria-label="' + esc(label) + '">' +
     options.map(option => '<label class="pick' + (on[option[0]] ? " on" : "") +
-      (option[2] ? " rest" : "") + '"><input type="checkbox" data-set="pick" ' +
-      'data-name="' + esc(name) + '" value="' + esc(option[0]) + '"' +
+      (option[2] ? " rest" : "") + '"><input type="checkbox" data-set="' +
+      (set || "pick") + '" data-name="' + esc(name) + '" value="' +
+      esc(option[0]) + '"' +
       (on[option[0]] ? " checked" : "") + ">" + esc(option[1]) +
       (option[3] ? "<i>" + esc(option[3]) + "</i>" : "") + "</label>").join("") +
     "</div>";
+}
+
+function yesNo(label, name, value, set) {
+  return '<div class="picks" role="group" aria-label="' + esc(label) +
+    '"><label class="pick' + (value ? " on" : "") +
+    '"><input type="checkbox" data-set="' + (set || "flag") + '" data-name="' +
+    esc(name) + '" aria-label="' + esc(label) + '"' + (value ? " checked" : "") +
+    ">" + (value ? "yes" : "no") + "</label></div>";
 }
 
 function dayPicks(inst) {
@@ -451,9 +964,19 @@ function shiftPicks(inst) {
   return inst.shifts.map(shift => [shift.id, shift.id, false, shift.name || ""]);
 }
 
-function textField(label, set, value, hint) {
+function textField(label, set, value, hint, name) {
   return '<input type="text" aria-label="' + esc(label) + '" data-set="' + set +
-    '" value="' + esc(value || "") + '" placeholder="' + esc(hint || "") + '">';
+    '"' + (name ? ' data-name="' + esc(name) + '"' : "") +
+    ' value="' + esc(value || "") + '" placeholder="' + esc(hint || "") + '">';
+}
+
+function listField(label, set, name, value, options, hint) {
+  const list = "list-" + name;
+  return '<input type="text" aria-label="' + esc(label) + '" data-set="' + set +
+    '" data-name="' + esc(name) + '" list="' + list + '" value="' +
+    esc(value || "") + '" placeholder="' + esc(hint || "") + '">' +
+    '<datalist id="' + list + '">' + options.map(one =>
+      '<option value="' + esc(one) + '"></option>').join("") + "</datalist>";
 }
 
 function multiOf(label, options, chosen) {
@@ -472,11 +995,7 @@ function paramField(param) {
   const spare = param.required ? undefined : "any";
   let control;
   if (param.kind === "bool") {
-    control = '<div class="picks" role="group" aria-label="' + esc(label) +
-      '"><label class="pick' + (value ? " on" : "") +
-      '"><input type="checkbox" data-set="flag" data-name="' + esc(param.name) +
-      '" aria-label="' + esc(label) + '"' + (value ? " checked" : "") + ">" +
-      (value ? "yes" : "no") + "</label></div>";
+    control = yesNo(label, param.name, value, "flag");
   } else if (param.kind === "choice") {
     control = selectOf(label, "param", param.name, value,
                        param.options.map(option => [option, option]), spare);
@@ -921,9 +1440,10 @@ function heldBy(node) {
         ? '[data-id="' + node.dataset.id + '"]' : "");
   }
   if (!node.dataset.set) return "";
-  return '[data-set="' + node.dataset.set + '"]' +
+  const set = node.dataset.set;
+  return '[data-set="' + set + '"]' +
     (node.dataset.name ? '[data-name="' + node.dataset.name + '"]' : "") +
-    (node.dataset.set === "pick" ? '[value="' + node.value + '"]' : "");
+    (set === "pick" || set === "hold" ? '[value="' + node.value + '"]' : "");
 }
 
 function render() {
@@ -987,6 +1507,13 @@ async function loadSample() {
     state.draft = null;
     state.dropped = null;
     state.dirty = false;
+    state.edit = null;
+    state.gone = null;
+    state.pick = "";
+    state.pickFind = "";
+    state.staffFind = "";
+    state.lit = "";
+    state.who = "";
     render();
     say(state.instance.employees.length + " staff over " +
         state.instance.horizon.num_days + " days.",
@@ -1051,7 +1578,7 @@ async function runSolve() {
 
 function plainly(err) {
   let why = String(err.message || err).replace(/ \(instance[^)]*\)$/, "");
-  why = why.replace(/^rule rejected: /, "");
+  why = why.replace(/^(rule|instance) rejected: /, "");
   if (state.draft) {
     // the slip already says which rule this is, so drop the engine's own preamble
     why = why.replace(new RegExp("^rule \\S+ \\(" + state.draft.type + "\\): "), "");
@@ -1059,8 +1586,9 @@ function plainly(err) {
   return why;
 }
 
-async function commit(rules, told) {
-  const trial = Object.assign({}, state.instance, { rules: rules });
+async function commit(patch, told, fresh) {
+  const trial = Object.assign({}, state.instance, patch);
+  const had = Boolean(state.solved);
   state.busy = true;
   render();
   try {
@@ -1068,13 +1596,24 @@ async function commit(rules, told) {
     state.instance = trial;
     state.check = out;
     state.draft = null;
-    state.dirty = Boolean(state.solved);
-    say(told, out.ok ? rules.length + " rules now, and the month still works."
-                     : out.problems.length + " problem(s) — see step 5.",
-        out.ok ? "" : "bad");
+    state.edit = null;
+    if (fresh) {
+      state.solved = null;
+      state.lit = "";
+      state.who = "";
+      state.dirty = false;
+    } else state.dirty = had;
+    say(told, (out.ok
+      ? trial.rules.length + " rules over " + trial.employees.length +
+        " staff, and the month still works."
+      : out.problems.length + " problem(s) — see step 5.") +
+      (fresh && had ? " The roster was built for the month as it was, so it has " +
+        "been cleared — generate it again on step 6." : ""),
+      out.ok ? "" : "bad");
     return true;
   } catch (err) {
     if (state.draft) state.draft.error = plainly(err);
+    if (state.edit) state.edit.error = plainly(err);
     say("The engine would not take that.", plainly(err), "bad");
     return false;
   } finally {
@@ -1144,7 +1683,8 @@ async function saveRule() {
   if (found >= 0) rules[found] = rule; else rules.push(rule);
   draft.error = "";
   const from = draft.fromLine;
-  if (await commit(rules, (found >= 0 ? "Saved: " : "Added: ") + rule.label) && from) {
+  if (await commit({ rules: rules },
+                   (found >= 0 ? "Saved: " : "Added: ") + rule.label) && from) {
     forget(from);
     render();
   }
@@ -1154,7 +1694,7 @@ async function dropRule(id) {
   const gone = state.instance.rules.filter(rule => rule.id === id)[0];
   if (!gone || state.busy) return;
   const kept = state.instance.rules.filter(rule => rule.id !== id);
-  if (await commit(kept, "Dropped: " + gone.label)) {
+  if (await commit({ rules: kept }, "Dropped: " + gone.label)) {
     state.dropped = gone;
     render();
   }
@@ -1164,9 +1704,155 @@ async function undrop() {
   const back = state.dropped;
   if (!back || state.busy) return;
   state.dropped = null;
-  if (!await commit(state.instance.rules.concat([back]), "Put back: " + back.label)) {
+  if (!await commit({ rules: state.instance.rules.concat([back]) },
+                    "Put back: " + back.label)) {
     state.dropped = back;
   }
+  render();
+}
+
+function renamedFor(name, span) {
+  const stem = /^(.*)-\d{4}-\d\d-\d\d-\d+d$/.exec(name || "");
+  return stem ? stem[1] + "-" + span.start + "-" + span.num_days + "d" : name;
+}
+
+async function savePeriod() {
+  const edit = state.edit;
+  const trial = periodTrial();
+  if (!edit || !trial || state.busy) return;
+  const lost = trial.rules.lost;
+  edit.error = "";
+  await commit({ horizon: trial.span,
+                 demand: trial.demand.demand,
+                 rules: trial.rules.rules,
+                 name: renamedFor(state.instance.name, trial.span) },
+    "The month now runs from " + longDate(trial.span.start) + " for " +
+    trial.span.num_days + " days." + (lost.length ? " " + lost.length +
+      " dated rule(s) fell outside it and went with the old dates: " +
+      lost.map(rule => rule.label).join("; ") : ""), true);
+}
+
+function openEdit(kind, id) {
+  const inst = state.instance;
+  if (!inst || state.busy) return;
+  if (kind === "period") state.edit = { kind: "period", start: inst.horizon.start,
+                                        days: String(inst.horizon.num_days),
+                                        error: "" };
+  if (kind === "person") {
+    const person = id ? inst.employees.filter(one => one.id === id)[0] : null;
+    if (id && !person) return;
+    state.edit = personEdit(person);
+  }
+  if (kind === "shift") {
+    const shift = inst.shifts.filter(one => one.id === id)[0];
+    if (!shift) return;
+    state.edit = shiftEdit(shift);
+  }
+  render();
+}
+
+async function savePerson() {
+  const edit = state.edit;
+  const inst = state.instance;
+  if (!edit || !inst || state.busy) return;
+  const id = (edit.id || "").trim();
+  const name = (edit.name || "").trim();
+  const stop = word => { edit.error = word; render(); };
+  if (!/^[A-Za-z0-9_.:-]+$/.test(id)) {
+    return stop("A staff number can hold letters, digits and - _ . : — nothing " +
+                "else, because every rule names the person by it.");
+  }
+  if (id !== edit.was && inst.employees.some(one => one.id === id)) {
+    return stop(id + " is already on the roll.");
+  }
+  if (!edit.roles.length) {
+    return stop("Choose at least one role, or there is no duty this person could " +
+                "be given.");
+  }
+  const person = { id: id, name: name || id, roles: edit.roles.slice(),
+                   contract: (edit.contract || "").trim() || "permanent" };
+  const patch = { employees: edit.was
+    ? inst.employees.map(one => one.id === edit.was ? person : one)
+    : inst.employees.concat([person]) };
+  if (edit.was && id !== edit.was) {
+    const tied = scopeRules(inst, edit.was).length;
+    patch.rules = renameInRules(inst, edit.was, id);
+    edit.renamed = tied;
+  }
+  edit.error = "";
+  const was = edit.was;
+  if (await commit(patch, (was ? "Saved " + id : "Added " + id + " to the roll") +
+      (was && id !== was ? ", and rewrote " + edit.renamed + " rule(s) that named " +
+        was : ""), true)) {
+    if (state.pick === was) state.pick = id;
+    render();
+  }
+}
+
+async function removePerson(id) {
+  const inst = state.instance;
+  if (!inst || state.busy) return;
+  const person = inst.employees.filter(one => one.id === id)[0];
+  if (!person) return;
+  if (inst.employees.length < 2) {
+    say("The roll cannot be emptied.", "A month needs somebody to work it.", "bad");
+    return;
+  }
+  const out = withoutPerson(inst, id);
+  const gone = { person: person, at: inst.employees.indexOf(person),
+                 lost: out.lost, trimmed: out.trimmed };
+  if (await commit({ employees: out.employees, rules: out.rules },
+      "Removed " + id + " · " + (person.name || id) + (out.lost.length
+        ? ", and with them " + out.lost.length + " rule(s) that named nobody else: " +
+          out.lost.map(rule => rule.label).join("; ")
+        : ""), true)) {
+    state.gone = gone;
+    if (state.pick === id) state.pick = "";
+    render();
+  }
+}
+
+async function unremove() {
+  const back = state.gone;
+  const inst = state.instance;
+  if (!back || !inst || state.busy) return;
+  const id = back.person.id;
+  const employees = inst.employees.slice();
+  employees.splice(Math.min(back.at, employees.length), 0, back.person);
+  const held = {};
+  back.trimmed.forEach(one => { held[one] = true; });
+  const seen = taken();
+  const rules = inst.rules.map(rule => held[rule.id]
+    ? Object.assign({}, rule, { scope: { kind: "employees",
+        ids: (rule.scope.ids || []).concat([id]).slice().sort() } })
+    : rule).concat(back.lost.filter(rule => !seen[rule.id]));
+  state.gone = null;
+  if (!await commit({ employees: employees, rules: rules },
+                    "Put " + id + " back on the roll", true)) {
+    state.gone = back;
+  }
+  render();
+}
+
+async function saveShift() {
+  const edit = state.edit;
+  const inst = state.instance;
+  const trial = edit ? shiftTrial() : null;
+  if (!edit || !inst || !trial || state.busy) return;
+  edit.error = "";
+  const shifts = inst.shifts.map(shift => shift.id === edit.id
+    ? Object.assign({}, shift, { name: (edit.name || "").trim() || shift.id,
+        start_min: trial.start_min, duration_min: trial.duration_min,
+        counts_as_night: Boolean(edit.night) })
+    : shift);
+  await commit({ shifts: shifts }, edit.id + " now runs " +
+    clock(trial.start_min) + "–" + clock(trial.start_min + trial.duration_min) +
+    " · " + hours(trial.duration_min) +
+    (edit.night ? " · counts as a night" : ""), true);
+}
+
+function pickWho(id) {
+  state.pick = state.pick === id ? "" : id;
   render();
 }
 
@@ -1223,7 +1909,8 @@ async function takeDraft(line) {
   const found = proposalOn(line);
   if (!found || !found.rule || state.busy) return;
   const rule = asRule(found.rule, taken());
-  if (await commit(state.instance.rules.concat([rule]), "Accepted: " + rule.label)) {
+  if (await commit({ rules: state.instance.rules.concat([rule]) },
+                   "Accepted: " + rule.label)) {
     forget(line);
     render();
   }
@@ -1234,7 +1921,7 @@ async function takeAll() {
   if (!ready.length || state.busy) return;
   const seen = taken();
   const rules = ready.map(one => asRule(one.rule, seen));
-  if (await commit(state.instance.rules.concat(rules),
+  if (await commit({ rules: state.instance.rules.concat(rules) },
                    "Accepted " + rules.length + " proposals.")) {
     ready.forEach(one => forget(one.line));
     render();
@@ -1371,6 +2058,26 @@ function setField(what, value, name, on) {
     state.view.only = Boolean(on);
     return true;
   }
+  if (what === "staff-find") {
+    state.staffFind = value;
+    return true;
+  }
+  if (what === "pick-find") {
+    state.pickFind = value;
+    return true;
+  }
+  if (what === "edit" || what === "edit-flag" || what === "hold") {
+    const edit = state.edit;
+    if (!edit) return false;
+    edit.error = "";
+    if (what === "edit") edit[name] = value;
+    else if (what === "edit-flag") edit[name] = Boolean(on);
+    else {
+      edit.roles = on ? edit.roles.concat([value]).sort()
+                      : edit.roles.filter(one => one !== value);
+    }
+    return true;
+  }
   const draft = state.draft;
   if (!draft) return false;
   if (what === "type") {
@@ -1410,18 +2117,21 @@ document.querySelector(".sheet").addEventListener("change", event => {
   if (setField(field.dataset.set, value, field.dataset.name, field.checked)) render();
 });
 
+const LIVE = ["find", "staff-find", "pick-find"];
+
 document.querySelector(".sheet").addEventListener("input", event => {
   const memo = event.target.closest('[data-set="memo"]');
   if (memo) {
     state.memoText = memo.value;
     return;
   }
-  const find = event.target.closest('[data-set="find"]');
-  if (!find) return;
-  const caret = find.selectionStart;
-  state.view.find = find.value;
+  const field = event.target.closest("[data-set]");
+  if (!field || LIVE.indexOf(field.dataset.set) < 0) return;
+  const what = field.dataset.set;
+  const caret = field.selectionStart;
+  if (!setField(what, field.value, field.dataset.name, field.checked)) return;
   render();
-  const again = document.querySelector('[data-set="find"]');
+  const again = document.querySelector('[data-set="' + what + '"]');
   if (again && again.setSelectionRange) {
     again.focus();
     again.setSelectionRange(caret, caret);
@@ -1460,6 +2170,17 @@ document.querySelector(".sheet").addEventListener("click", event => {
   if (doing === "skip-draft") skipDraft(Number(button.dataset.id));
   if (doing === "light") lightUp(button.dataset.id);
   if (doing === "who") showWho(button.dataset.id);
+  if (doing === "edit-period") openEdit("period");
+  if (doing === "save-period") savePeriod();
+  if (doing === "add-person") openEdit("person", "");
+  if (doing === "edit-person") openEdit("person", button.dataset.id);
+  if (doing === "save-person") savePerson();
+  if (doing === "drop-person") removePerson(button.dataset.id);
+  if (doing === "unremove") unremove();
+  if (doing === "edit-shift") openEdit("shift", button.dataset.id);
+  if (doing === "save-shift") saveShift();
+  if (doing === "cancel-edit") { state.edit = null; render(); }
+  if (doing === "pick") pickWho(button.dataset.id);
 });
 
 at("recheck").addEventListener("click", checkEngine);

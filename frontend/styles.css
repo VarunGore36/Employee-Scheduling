@@ -183,7 +183,7 @@ button.quiet:hover { border-color: var(--stamp); }
 }
 .ledger dd { font-variant-numeric: tabular-nums; }
 .ledger dt.bad { color: var(--red); }
-.ledger + .ledger, .ledger + button { margin-top: -8px; }
+.ledger + .ledger, .ledger + button, .ledger + .doing { margin-top: -8px; }
 .empty {
   border: 1px solid var(--rule);
   border-left: 4px solid var(--stamp);
@@ -384,6 +384,7 @@ button.quiet:hover { border-color: var(--stamp); }
   color: var(--slate);
 }
 .chip.hard { color: var(--sheet); background: var(--ink); border-color: var(--ink); }
+.chip.night { color: var(--stamp); border-color: var(--stamp); }
 .warn {
   font: 12px/1.6 var(--mono);
   color: var(--red);
@@ -539,6 +540,75 @@ button.quiet:hover { border-color: var(--stamp); }
 .card .strip span[data-shift="N"] { color: var(--stamp); border-color: var(--stamp); }
 .card .strip span[data-rest="true"] { background: rgba(179, 36, 28, 0.06); }
 .card .strip span[data-lit="true"] { border-color: var(--red); color: var(--red); }
+.hits { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 20px; }
+.hits .count { align-self: center; font: 12px/1.6 var(--mono); color: var(--slate); }
+button.quiet.on {
+  color: var(--sheet);
+  background: var(--stamp);
+  border-color: var(--stamp);
+}
+.who h4 {
+  font: 400 15px/1.2 var(--display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin: 0 0 8px;
+}
+.who .tally { margin: 14px 0 16px; }
+.cal {
+  overflow: auto;
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  margin: 0 0 12px;
+}
+.cal table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 520px;
+  table-layout: fixed;
+  font: 12px/1.35 var(--mono);
+}
+.cal th, .cal td {
+  border-right: 1px solid rgba(169, 189, 178, 0.55);
+  border-bottom: 1px solid rgba(169, 189, 178, 0.55);
+  padding: 4px 5px;
+  text-align: left;
+  vertical-align: top;
+  font-weight: 400;
+}
+.cal thead th {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--slate);
+  border-bottom: 1px solid var(--rule);
+}
+.cal thead th.rest { color: var(--red); }
+.cal td { height: 66px; color: var(--ink); }
+.cal td.rest { background: rgba(179, 36, 28, 0.06); }
+.cal td.pad {
+  background: repeating-linear-gradient(45deg, transparent 0 5px,
+              rgba(169, 189, 178, 0.3) 5px 6px);
+}
+.cal td.on { box-shadow: inset 3px 0 0 var(--stamp); }
+.cal td i {
+  font-style: normal;
+  display: block;
+  font-size: 10px;
+  color: var(--slate);
+  font-variant-numeric: tabular-nums;
+}
+.cal td.on i { color: var(--ink); }
+.cal td b { font-weight: 400; font-size: 15px; letter-spacing: 0.06em; }
+.cal td.night, .cal td.night b { color: var(--stamp); }
+.cal td span { display: block; font-size: 10px; color: var(--slate); }
+.cal td .mark {
+  color: var(--red);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cal td .mark.firm { border-top: 1px solid var(--red); }
 .minor {
   font: 400 13px/1 var(--display);
   letter-spacing: 0.14em;
@@ -616,6 +686,9 @@ button.quiet:hover { border-color: var(--stamp); }
   .sift input[type="search"] { width: 100%; }
   .breaks button { grid-template-columns: 54px 1fr; }
   .breaks .cost { grid-column: 2; }
+  .cal table { font-size: 11px; min-width: 440px; }
+  .cal td { height: 58px; }
+  .cal td b { font-size: 13px; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }

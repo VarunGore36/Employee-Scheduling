@@ -45,8 +45,8 @@ The same month solved through the API in 25 seconds returns the same verdict.
 The admin's page has been started. `frontend/index.html` is served by
 `roster.cli serve`, with `styles.css` and `app.js` beside it, and it walks the month
 in six steps — period, staff, shifts, rules, check, roster. It opens the sample month
-from the API, reads it back in the admin's terms, asks `POST /validate` whether the
-month is possible at all, and
+from the API, reads it back in the admin's terms, lets every part of it be corrected,
+asks `POST /validate` whether the month is possible at all, and
 then generates it: the duty register itself, dates across and staff down, with
 weekends shaded, nights in violet, each person's duties, hours, nights and
 weekends ruled off at the right edge, a head count under every day, and
@@ -92,6 +92,49 @@ kinds to fill in by hand instead. Nothing reaches the register without being put
 the engine, and the officials' own wording becomes the label the breach report will
 use, so what comes back reads like the circular rather than like a rule type.
 
+Nothing on the page is read-only any more. The month itself can be moved: step one
+takes a new first day and a new length, works out what that would mean before
+anything is sent, and says so in a ledger — how far the month moves, how many days
+it becomes, how many dated rules travel with it, and which would be trimmed or lost
+because their dates now fall outside. Leave, days already asked off and duties
+already fixed are shifted by the same number of days the month moved, a rule that
+only partly fits keeps the dates that still land inside, and a rule left with no
+dates at all is named in red before it goes rather than after. The demand moves
+with the calendar too: where the month has one shape for working days and another
+for rest days, the new month is laid out to its own weekends, and where the demand
+is irregular each added day repeats the same weekday a week earlier. The page says
+which of the two it did.
+
+The roll is editable in the same spirit. A name, a staff number, the roles a person
+holds and their contract can all be corrected, people can be taken on or taken off,
+and the consequences are handled rather than left to the admin. Because every rule
+names a person by staff number, renaming one rewrites every rule that named them in
+the same breath, and the slip says how many rules that will be before the change is
+made. Removing somebody trims them out of the rules that still name other people
+and drops only the rules that would then name nobody, saying which; the removal can
+be undone, putting the person back where they stood on the roll with their rules
+restored. The last person on the roll cannot be removed, and a staff number already
+taken, or one holding characters no rule could name, is refused on the page without
+troubling the engine.
+
+Shift clocks are editable too — when a shift starts, how long it runs, and whether
+it counts as a night, which is what the night rules and the rest gaps are read
+against rather than the hour on the clock. The letter that names a shift stays
+fixed, because every line of demand and every rule that mentions a shift is keyed
+to it. A time that is not a time, or a length under a quarter of an hour or over
+twenty-four, is refused before it is sent; anything the page does accept still goes
+to `POST /validate` and is kept only if the engine agrees.
+
+Step three also answers the question an admin actually asks, which is about one
+person rather than the whole sheet. Any name or staff number brings up that person's
+month as a calendar — the weeks laid out under the weekday the month starts on, days
+outside the month hatched, rest days tinted, nights in violet — with each duty
+giving its shift, its clock and the role it is worked as, and each day the rules
+already speak to marked on the day itself in the officials' own wording: on leave,
+day requested off, duty already fixed. Their duties, hours, nights, weekends and
+longest run are totalled above it. Before a roster exists the calendar still shows
+what the rules fix, so the month can be read before it is built.
+
 Still to come: CSV export and print styles.
 
 ## Running it
@@ -111,7 +154,7 @@ The first command solves the built-in month and prints the roster grid, the
 per-person workload and the rule report. The second lists every rule type the
 engine understands. The third reads rules written as prose into draft rules, and
 takes them as arguments, from a file with `--file`, or on standard input. The
-fourth starts the API. The last runs the test suite — 395 tests, about a minute —
+fourth starts the API. The last runs the test suite — 396 tests, about a minute —
 and the `-t .` is required.
 
 With the server up, open <http://127.0.0.1:8000/> for the admin's page. It is three
@@ -121,6 +164,23 @@ own. That last part is why it is plain JavaScript rather than React: nothing cou
 installed from a package registry in the environment this was written in, and a page
 that cannot be run cannot be verified either. The same screens can be rebuilt as
 React components later without the API changing.
+
+The page has its own end-to-end check, which needs nothing but Node and a running
+engine:
+
+```
+node frontend/checks/live.cjs
+```
+
+It loads `app.js` with a stub document, points it at the server on port 8000
+(`PORT=…` for another), and drives the page's own functions rather than a copy of
+them: it opens the sample month, moves the month and confirms the dated rules moved
+with it, renames a member of staff and confirms the rules that named them were
+rewritten, takes somebody on and off the roll and undoes the removal, changes a
+shift's clock and its night flag, checks that figures the page should refuse never
+reach the engine and that ones it accepts are put to `POST /validate`, solves the
+edited month, and reads one person's calendar back off the roster the engine
+returned. It exits non-zero if any of that stops holding.
 
 Generated rosters, reports and CSV exports are written to a `roster-output`
 folder beside this project, never inside it, so results stay out of the

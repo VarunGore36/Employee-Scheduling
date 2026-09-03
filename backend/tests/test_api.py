@@ -393,10 +393,22 @@ class TestTheShippedPage(ServedCase):
 
     def test_the_page_only_calls_routes_this_server_answers(self):
         page = self.call("GET", "/").raw.decode("utf-8")
-        called = set(re.findall(r'api\("(/[a-z]+)"', page))
+        script = re.search(r'<script src="([^"]+)"', page)
+        self.assertIsNotNone(script, "the page links no script")
+        served = self.call("GET", "/" + script.group(1))
+        self.assertEqual(served.status, 200)
+        called = set(re.findall(r'api\("(/[a-z]+)"', served.raw.decode("utf-8")))
         self.assertTrue(called, "the page asks the engine for nothing")
         known = {"/" + name for name in ENDPOINTS} | {"/health", "/sample", "/rules"}
         self.assertLessEqual(called, known)
+
+    def test_everything_the_page_links_is_served(self):
+        page = self.call("GET", "/").raw.decode("utf-8")
+        linked = re.findall(r'(?:src|href)="([^":]+)"', page)
+        self.assertTrue(linked, "the page links nothing")
+        for path in linked:
+            with self.subTest(path):
+                self.assertEqual(self.call("GET", "/" + path).status, 200)
 
 
 class TestBindingRules(unittest.TestCase):
