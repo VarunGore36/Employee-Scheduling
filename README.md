@@ -43,9 +43,10 @@ re-audited by a second implementation of the rules that reads only the output.
 The same month solved through the API in 25 seconds returns the same verdict.
 
 The admin's page has been started. `frontend/index.html` is served by
-`roster.cli serve`, and it walks the month in six steps — period, staff, shifts,
-rules, check, roster. It opens the sample month from the API, reads it back in the
-admin's terms, asks `POST /validate` whether the month is possible at all, and
+`roster.cli serve`, with `styles.css` and `app.js` beside it, and it walks the month
+in six steps — period, staff, shifts, rules, check, roster. It opens the sample month
+from the API, reads it back in the admin's terms, asks `POST /validate` whether the
+month is possible at all, and
 then generates it: the duty register itself, dates across and staff down, with
 weekends shaded, nights in violet, each person's duties, hours, nights and
 weekends ruled off at the right edge, a head count under every day, and
@@ -113,12 +114,13 @@ takes them as arguments, from a file with `--file`, or on standard input. The
 fourth starts the API. The last runs the test suite — 395 tests, about a minute —
 and the `-t .` is required.
 
-With the server up, open <http://127.0.0.1:8000/> for the admin's page. It is one
-self-contained HTML file with no build step and no dependencies of its own, which
-is why it is plain JavaScript rather than React: nothing could be installed from a
-package registry in the environment this was written in, and a page that cannot be
-run cannot be verified either. The same screens can be rebuilt as React components
-later without the API changing.
+With the server up, open <http://127.0.0.1:8000/> for the admin's page. It is three
+plain files served as they are — `index.html` is the markup, `styles.css` the
+stylesheet, `app.js` the behaviour — with no build step and no dependencies of its
+own. That last part is why it is plain JavaScript rather than React: nothing could be
+installed from a package registry in the environment this was written in, and a page
+that cannot be run cannot be verified either. The same screens can be rebuilt as
+React components later without the API changing.
 
 Generated rosters, reports and CSV exports are written to a `roster-output`
 folder beside this project, never inside it, so results stay out of the
