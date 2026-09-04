@@ -44,10 +44,16 @@ The same month solved through the API in 25 seconds returns the same verdict.
 
 The admin's page has been started. `frontend/index.html` is served by
 `roster.cli serve`, with `styles.css` and `app.js` beside it, and it walks the month
-in six steps — period, staff, shifts, rules, check, roster. It opens the sample month
-from the API, reads it back in the admin's terms, lets every part of it be corrected,
-asks `POST /validate` whether the month is possible at all, and
-then generates it: the duty register itself, dates across and staff down, with
+in six steps — period, staff, shifts, rules, check, roster. It opens on an empty
+desk: nothing is assumed and no example data is ever fetched. Step one asks for the
+first day, how many days the month runs and which weekdays are the weekly rest, and
+the month it opens is genuinely blank — no roles, no shifts, nobody on the roll, no
+demand, no rules. The steps that follow fill it in the admin's own terms: role codes
+and the roll, the shifts in a day and how many of each role each one needs, and the
+rules. A half-built month is held on the desk rather than sent anywhere, because the
+engine cannot read one; from the first person onwards every change is put to
+`POST /validate` and kept only if the engine agrees. Once the month stands up it is
+generated: the duty register itself, dates across and staff down, with
 weekends shaded, nights in violet, each person's duties, hours, nights and
 weekends ruled off at the right edge, a head count under every day, and
 underneath it every rule the engine had to give ground on — grouped by rule, worst
@@ -113,9 +119,19 @@ the same breath, and the slip says how many rules that will be before the change
 made. Removing somebody trims them out of the rules that still name other people
 and drops only the rules that would then name nobody, saying which; the removal can
 be undone, putting the person back where they stood on the roll with their rules
-restored. The last person on the roll cannot be removed, and a staff number already
+restored. The roll can be emptied down to nobody — the month simply goes back to
+being held on the desk until somebody is on it again — while a staff number already
 taken, or one holding characters no rule could name, is refused on the page without
-troubling the engine.
+troubling the engine. What the page suggests for the next person it reads off the
+roll itself: the office's own numbering carried on a step, and the contract most of
+the roll is already on, never an invented example.
+
+Roles and shifts are made on the page the same way, and can be taken off it. A role
+is a code and a printed name; a shift is a letter, a name, a clock, a length and
+whether it counts as a night. Neither code can be edited once it exists, because the
+demand and the rules are keyed to it, and neither can be removed while anything
+still holds it — the page says what does, whether that is people on the roll, lines
+of demand or rules that name it, and asks for those to be taken off first.
 
 Shift clocks are editable too — when a shift starts, how long it runs, and whether
 it counts as a night, which is what the night rules and the rest gaps are read
@@ -174,13 +190,20 @@ node frontend/checks/live.cjs
 
 It loads `app.js` with a stub document, points it at the server on port 8000
 (`PORT=…` for another), and drives the page's own functions rather than a copy of
-them: it opens the sample month, moves the month and confirms the dated rules moved
-with it, renames a member of staff and confirms the rules that named them were
-rewritten, takes somebody on and off the roll and undoes the removal, changes a
-shift's clock and its night flag, checks that figures the page should refuse never
-reach the engine and that ones it accepts are put to `POST /validate`, solves the
-edited month, and reads one person's calendar back off the roster the engine
-returned. It exits non-zero if any of that stops holding.
+them. It builds a month from nothing the way an admin would: an empty desk that
+assumes nothing, a month opened on a chosen first day for a chosen length, three
+roles and three shifts, nine staff on the office's own numbering, the demand laid
+across working days and rest days, and two mandatory rules — then it has the real
+engine judge the month, solve it, and confirms the roster covers exactly the dates
+asked for with no hard rule broken and nobody working more days in a row than the
+admin allowed. Along the way it checks that a half-built month is never sent
+anywhere, that an impossible span or an unusable figure is refused before it is
+sent, that a month the engine cannot read comes back refused in the engine's own
+words, that a role or shift something still holds cannot be removed, that starting
+a month over empties the desk and takes the old roster with it, and that one
+person's calendar reads off the roster the engine actually returned. It also
+asserts, start to finish, that no example data is ever fetched. It exits non-zero
+if any of that stops holding.
 
 Generated rosters, reports and CSV exports are written to a `roster-output`
 folder beside this project, never inside it, so results stay out of the
@@ -222,8 +245,9 @@ they are left to the feasibility check and the violation report.
 
 `GET /health`, `/schema`, `/rules` and `/sample` are the read side: the schema
 and rule catalogue are what the questionnaire draws itself from, and `/sample`
-hands back a complete worked instance so the form has something real to open
-with. `POST /validate` says whether an instance is satisfiable before anybody
+hands back a complete worked instance for the tests and the `demo` command. The
+admin's page never calls it — it starts from nothing. `POST /validate` says whether
+an instance is satisfiable before anybody
 waits on a search, `/parse` reads rules written as prose into drafts, `/solve`
 generates a roster, `/evaluate` scores a roster somebody else wrote without
 touching it, and `/repair` takes a submitted roster and improves it in place.

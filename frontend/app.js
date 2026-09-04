@@ -86,8 +86,12 @@ function daysBetween(from, to) {
 function weekdayOf(iso) { return (isoDate(iso).getDay() + 6) % 7; }
 
 function realDate(iso) {
-  return /^\d{4}-\d\d-\d\d$/.test(String(iso || "")) &&
-         !isNaN(isoDate(iso).getDate());
+  const text = String(iso || "");
+  if (!/^\d{4}-\d\d-\d\d$/.test(text)) return false;
+  const day = isoDate(text);
+  if (isNaN(day.getDate())) return false;
+  return [day.getFullYear(), String(day.getMonth() + 1).padStart(2, "0"),
+          String(day.getDate()).padStart(2, "0")].join("-") === text;
 }
 
 function parseClock(text) {
@@ -124,8 +128,32 @@ function nothingYet(message, label, action) {
   return '<div class="empty"><p>' + esc(message) + "</p>" +
          press(label, action) + "</div>";
 }
-const OPEN_IT = "Open the sample month";
+const START_IT = "Start a month on step 1";
 const HINT = "Point at any duty and it is read out here.";
+
+function ready(inst) {
+  return Boolean(inst) && inst.roles.length > 0 && inst.shifts.length > 0 &&
+         inst.employees.length > 0;
+}
+
+function gaps(inst) {
+  const short = [];
+  if (!inst.roles.length) short.push("a role");
+  if (!inst.shifts.length) short.push("a shift");
+  if (!inst.employees.length) short.push("somebody on the roll");
+  if (!inst.demand.length) short.push("the demand");
+  return short;
+}
+
+function inWords(list) {
+  if (list.length < 2) return list.join("");
+  return list.slice(0, -1).join(", ") + " and " + list[list.length - 1];
+}
+
+function stillNeeds(inst) {
+  const short = gaps(inst);
+  return short.length ? "Still to come: " + inWords(short) + "." : "";
+}
 
 function datedParams(type) {
   const card = typeCard(type);
@@ -216,14 +244,20 @@ function moveRules(inst, delta, span) {
 function periodTrial() {
   const edit = state.edit;
   const inst = state.instance;
-  if (!edit || !inst) return null;
+  if (!edit || edit.kind !== "period" || !inst) return null;
   const days = parseInt(edit.days, 10);
   if (!realDate(edit.start) || !isFinite(days) || days < 1 || days > 62) return null;
   const span = Object.assign({}, inst.horizon,
-                             { start: edit.start, num_days: days });
+                             { start: edit.start, num_days: days,
+                               weekend_days: (edit.weekend || []).map(Number)
+                                 .sort((one, two) => one - two) });
   return { span: span, delta: daysBetween(inst.horizon.start, edit.start),
            rules: moveRules(inst, daysBetween(inst.horizon.start, edit.start), span),
            demand: remapDemand(inst, span) };
+}
+
+function sameDays(one, two) {
+  return (one || []).join(",") === (two || []).join(",");
 }
 
 function periodWords(trial) {
@@ -237,6 +271,10 @@ function periodWords(trial) {
         " " + (trial.delta > 0 ? "later" : "earlier")],
     ["Length", span.num_days === was.num_days ? "unchanged at " + was.num_days + " days"
       : was.num_days + " days becomes " + span.num_days],
+    ["Weekly rest", sameDays(span.weekend_days, was.weekend_days)
+      ? "unchanged" : (span.weekend_days.length
+        ? span.weekend_days.map(day => DAYS[day]).join(", ")
+        : "none — every day becomes a working day")],
     ["Demand", trial.demand.demand.length + " lines — " + trial.demand.how]
   ];
   const moved = trial.rules.moved.length;
@@ -262,6 +300,9 @@ function periodSlip() {
       'data-set="edit" data-name="start" value="' + esc(edit.start) + '">') +
     fieldRow("Days in the month", true,
       numberField("Days in the month", "edit", "days", edit.days, "1", 1)) +
+    fieldRow("Weekly rest days", false, picksOf("Weekly rest days", "weekend",
+      edit.weekend, DAYS.map((day, index) =>
+        [String(index), day.slice(0, 3), index > 4, ""]), "hold")) +
     (trial ? ledger(periodWords(trial))
       : '<p class="warn">Give a real first day and a length between 1 and 62 ' +
         "days.</p>") +
@@ -270,26 +311,118 @@ function periodSlip() {
     press("Cancel", "cancel-edit", true, state.busy) + "</div></div>";
 }
 
+function newStart() {
+  return { kind: "start", start: "", days: "", weekend: [], error: "" };
+}
+
+function startTrial() {
+  const edit = state.edit;
+  if (!edit || edit.kind !== "start") return null;
+  const days = parseInt(edit.days, 10);
+  if (!realDate(edit.start) || !isFinite(days) || days < 1 || days > 62) return null;
+  return { start: edit.start, num_days: days, holidays: [],
+           weekend_days: (edit.weekend || []).map(Number)
+                           .sort((one, two) => one - two) };
+}
+
+function blankMonth(span) {
+  return { name: "month-" + span.start + "-" + span.num_days + "d",
+           horizon: span, roles: [], shifts: [], employees: [], demand: [],
+           rules: [] };
+}
+
+function startWords(span) {
+  const resting = restDays({ horizon: span });
+  const off = dates({ horizon: span }).filter(resting).length;
+  return [
+    ["Would run", longDate(span.start) + " to " +
+                  longDate(addDays(span.start, span.num_days - 1))],
+    ["Days", span.num_days + " — " + (span.num_days - off) + " working, " + off +
+             " rest"],
+    ["Weekly rest", span.weekend_days.length
+      ? span.weekend_days.map(day => DAYS[day]).join(", ")
+      : "none yet — every day counts as a working day"],
+    ["Opens with", "no roles, no shifts, nobody on the roll, no demand, no rules"]
+  ];
+}
+
+function startSlip() {
+  const edit = state.edit;
+  const trial = startTrial();
+  return '<div class="slip"><h3>Start a month</h3>' +
+    '<p class="note"><b>Nothing is assumed.</b> Give the first day and how many ' +
+    "days the month runs, and mark which weekdays are the weekly rest. The month " +
+    "opens empty — no roles, no shifts, nobody on the roll, no demand and no rules " +
+    "— and the steps that follow are where you put them in. The engine is not asked " +
+    "to judge the month until there is enough of it to judge.</p>" +
+    (state.instance ? '<p class="warn">This replaces the month on the desk, and ' +
+      "everything entered on it.</p>" : "") +
+    (edit.error ? '<p class="warn">' + esc(edit.error) + "</p>" : "") +
+    fieldRow("First day", true, '<input type="date" aria-label="First day" ' +
+      'data-set="edit" data-name="start" value="' + esc(edit.start) + '">') +
+    fieldRow("Days in the month", true,
+      numberField("Days in the month", "edit", "days", edit.days, "1", 1)) +
+    fieldRow("Weekly rest days", false, picksOf("Weekly rest days", "weekend",
+      edit.weekend, DAYS.map((day, index) =>
+        [String(index), day.slice(0, 3), index > 4, ""]), "hold")) +
+    (trial ? ledger(startWords(trial))
+      : '<p class="warn">Give a real first day and a length between 1 and 62 ' +
+        "days.</p>") +
+    '<div class="doing">' +
+    press("Start this month", "start-month", false, state.busy || !trial) +
+    (state.instance ? press("Cancel", "cancel-edit", true, state.busy) : "") +
+    "</div></div>";
+}
+
+function startMonth() {
+  const trial = startTrial();
+  if (!trial || state.busy) return;
+  state.instance = blankMonth(trial);
+  state.check = null;
+  state.solved = null;
+  state.draft = null;
+  state.dropped = null;
+  state.dirty = false;
+  state.edit = null;
+  state.gone = null;
+  state.memo = false;
+  state.memoText = "";
+  state.read = null;
+  state.readError = "";
+  state.pick = "";
+  state.pickFind = "";
+  state.staffFind = "";
+  state.lit = "";
+  state.who = "";
+  state.view = { find: "", role: "", only: false };
+  render();
+  say("A blank month, " + longDate(trial.start) + " for " + trial.num_days +
+      " days.", stillNeeds(state.instance) + " Nothing else has been assumed.");
+}
+
 function periodPanel() {
   const inst = state.instance;
-  if (!inst) return nothingYet(
-    "Nothing is on the desk yet. The sample month is a real 31-day university " +
-    "roster — 44 staff, three shifts a day, 33 rules — and every other step " +
-    "reads from whatever is loaded here.", OPEN_IT, "sample");
+  if (!inst) return startSlip();
   const span = inst.horizon;
   const weekend = (span.weekend_days || []).map(day => DAYS[day]).join(", ");
   const shut = span.holidays || [];
-  const open = state.edit && state.edit.kind === "period";
+  const open = state.edit && (state.edit.kind === "period" ||
+                              state.edit.kind === "start");
   return ledger([
-    ["Instance", inst.name],
+    ["Month", inst.name],
     ["First day", longDate(span.start)],
     ["Last day", longDate(addDays(span.start, span.num_days - 1))],
     ["Days", span.num_days],
-    ["Weekend", weekend || "none"],
+    ["Weekly rest", weekend || "none"],
     ["Holidays", shut.length ? shut.map(longDate).join("; ") : "none"]
-  ]) + (open ? periodSlip() : '<div class="doing">' +
-    press("Change the month", "edit-period", false, state.busy || !state.schema) +
-    press("Reload the sample month", "sample", true, state.busy) + "</div>") +
+  ]) + (open
+    ? (state.edit.kind === "start" ? startSlip() : periodSlip())
+    : '<div class="doing">' +
+      press("Change the month", "edit-period", false, state.busy || !state.schema) +
+      press("Start a different month", "start-over", true, state.busy) + "</div>") +
+    (gaps(inst).length ? '<p class="key">' + esc(stillNeeds(inst)) +
+      " The engine is not asked to judge the month until it has a role, a shift " +
+      "and somebody on the roll.</p>" : "") +
     (state.schema ? "" : '<p class="warn">The rule catalogue could not be read ' +
       "from the engine, so a dated rule could not be moved safely and the month " +
       "cannot be changed until the engine answers again.</p>");
@@ -349,17 +482,19 @@ function usualContract(inst) {
   inst.employees.forEach(person => {
     if (person.contract) count[person.contract] = (count[person.contract] || 0) + 1;
   });
-  return Object.keys(count).sort((a, b) => count[b] - count[a])[0] || "permanent";
+  return Object.keys(count).sort((a, b) => count[b] - count[a])[0] || "";
 }
 
 function personEdit(person) {
   const inst = state.instance;
+  const first = inst.employees.length === 0;
   return { kind: "person",
            was: person ? person.id : "",
-           id: person ? person.id : nextStaffId(inst),
+           id: person ? person.id : (first ? "" : nextStaffId(inst)),
            name: person ? person.name || "" : "",
            roles: person ? person.roles.slice() : [],
-           contract: person ? person.contract || "" : usualContract(inst),
+           contract: person ? person.contract || ""
+                            : (first ? "" : usualContract(inst)),
            error: "" };
 }
 
@@ -377,13 +512,17 @@ function personSlip() {
     "kind of employment will look for.</p>" +
     (edit.error ? '<p class="warn">' + esc(edit.error) + "</p>" : "") +
     fieldRow("Staff number", true,
-      textField("Staff number", "edit", edit.id, nextStaffId(inst), "id")) +
+      textField("Staff number", "edit", edit.id,
+                inst.employees.length ? nextStaffId(inst)
+                                      : "as the office writes it", "id")) +
     fieldRow("Name", false,
       textField("Name", "edit", edit.name, "as it should read on the roster", "name")) +
     fieldRow("Roles held", true, picksOf("Roles held", "roles", edit.roles,
       inst.roles.map(role => [role.id, role.id, false, role.name]), "hold")) +
     fieldRow("Contract", false, listField("Contract", "edit", "contract",
-      edit.contract, contracts(inst), "permanent")) +
+      edit.contract, contracts(inst),
+      contracts(inst).length ? contracts(inst)[0]
+                             : "as the order describes it")) +
     (renaming && tied.length ? '<p class="note">' + tied.length + " rule" +
       (tied.length === 1 ? " names " : "s name ") + esc(edit.was) +
       " and will be rewritten to " + esc(edit.id) + ": " +
@@ -406,39 +545,163 @@ function personRow(person) {
 
 function staffPanel() {
   const inst = state.instance;
-  if (!inst) return nothingYet("The staff list arrives with the month.",
-                               OPEN_IT, "sample");
+  if (!inst) return nothingYet("The roll belongs to a month.", START_IT, "go-period");
   const qualified = {};
   inst.roles.forEach(role => { qualified[role.id] = 0; });
   inst.employees.forEach(person => person.roles.forEach(role => {
     qualified[role] = (qualified[role] || 0) + 1;
   }));
   const doubling = inst.employees.filter(person => person.roles.length > 1).length;
-  const open = state.edit && state.edit.kind === "person";
+  const open = state.edit &&
+    (state.edit.kind === "person" || state.edit.kind === "role");
   const find = state.staffFind.trim().toLowerCase();
   const shown = !find ? inst.employees : inst.employees.filter(person =>
     (person.id + " " + (person.name || "")).toLowerCase().indexOf(find) >= 0);
   return tally([["on the roll", inst.employees.length],
                 ["roles", inst.roles.length],
                 ["hold more than one role", doubling]]) +
-    ledger(inst.roles.map(role =>
-      [role.id, role.name + " — " + qualified[role.id] + " qualified"])) +
-    (open ? personSlip() : '<div class="doing">' +
-      press("Add someone", "add-person", false, state.busy) +
+    '<h3 class="minor">The roles</h3>' +
+    (inst.roles.length ? '<ul class="entries">' + inst.roles.map(role =>
+      roleRow(role, qualified[role.id] || 0)).join("") + "</ul>"
+      : '<p class="none">No roles yet. A role is the post a duty is worked as — the ' +
+        "demand asks for so many of a role on a shift, and nobody can be given a " +
+        "duty in a role they do not hold.</p>") +
+    (open && state.edit.kind === "role" ? roleSlip() : '<div class="doing">' +
+      press("Add a role", "add-role", inst.roles.length > 0, state.busy) +
+      "</div>") +
+    '<h3 class="minor">The roll</h3>' +
+    (open && state.edit.kind === "person" ? personSlip() : '<div class="doing">' +
+      press("Add someone", "add-person", false, state.busy || !inst.roles.length) +
       (state.gone ? press("Put " + state.gone.person.id + " back", "unremove",
                           true, state.busy) : "") + "</div>") +
-    '<div class="sift"><label for="onroll">Find</label>' +
-    '<input id="onroll" type="search" data-set="staff-find" autocomplete="off" ' +
-    'value="' + esc(state.staffFind) + '" placeholder="staff number or name">' +
-    '<span class="count">' + (find ? shown.length + " of " +
-      inst.employees.length + " on the roll" : inst.employees.length +
-      " on the roll") + "</span></div>" +
-    (shown.length ? '<ul class="entries">' + shown.map(personRow).join("") + "</ul>"
-      : '<p class="none">Nobody on the roll answers to that.</p>');
+    (inst.roles.length ? "" : '<p class="key">Add a role first — everybody on the ' +
+      "roll holds at least one, and it is what says which duties they can be " +
+      "given.</p>") +
+    (inst.employees.length
+      ? '<div class="sift"><label for="onroll">Find</label>' +
+        '<input id="onroll" type="search" data-set="staff-find" autocomplete="off" ' +
+        'value="' + esc(state.staffFind) + '" placeholder="staff number or name">' +
+        '<span class="count">' + (find ? shown.length + " of " +
+          inst.employees.length + " on the roll" : inst.employees.length +
+          " on the roll") + "</span></div>" +
+        (shown.length ? '<ul class="entries">' + shown.map(personRow).join("") +
+          "</ul>" : '<p class="none">Nobody on the roll answers to that.</p>')
+      : '<p class="none">Nobody on the roll yet.</p>');
+}
+
+function paramsOfKind(type, kind) {
+  const card = typeCard(type);
+  return (card ? card.params : []).filter(param => param.kind === kind);
+}
+
+function namedInRules(inst, kind, id) {
+  const scoped = kind === "role" ? "roles" : "";
+  return inst.rules.filter(rule => {
+    const scope = rule.scope || {};
+    if (scoped && scope.kind === scoped && (scope.ids || []).indexOf(id) >= 0) {
+      return true;
+    }
+    const params = rule.params || {};
+    return paramsOfKind(rule.type, kind).some(param => params[param.name] === id);
+  });
+}
+
+function holdsRole(inst, id) {
+  return inst.employees.filter(person => person.roles.indexOf(id) >= 0);
+}
+
+function roleEdit(role) {
+  return { kind: "role", was: role ? role.id : "", id: role ? role.id : "",
+           name: role ? role.name || "" : "", error: "" };
+}
+
+function roleSlip() {
+  const edit = state.edit;
+  return '<div class="slip"><h3>' +
+    (edit.was ? "Edit the " + esc(edit.was) + " role" : "Add a role") + "</h3>" +
+    '<p class="note"><b>A role is the post a duty is worked as.</b> The demand asks ' +
+    "for so many of a role on a shift, and a person can only be given a duty in a " +
+    "role they hold." + (edit.was ? " The short code stays as it is, because the " +
+      "demand and the rules are keyed to it; the longer name is only what the page " +
+      "prints." : " Use the short code the office already uses — it is what every " +
+      "line of demand and every rule will name.") + "</p>" +
+    (edit.error ? '<p class="warn">' + esc(edit.error) + "</p>" : "") +
+    fieldRow("Short code", true, edit.was
+      ? '<input type="text" aria-label="Short code" value="' + esc(edit.id) +
+        '" disabled>'
+      : textField("Short code", "edit", edit.id, "as the office writes it", "id")) +
+    fieldRow("Name", false,
+      textField("Name", "edit", edit.name, edit.id || "what it is called in full",
+                "name")) +
+    '<div class="doing">' +
+    press(edit.was ? "Save" : "Add the role", "save-role", false, state.busy) +
+    press("Cancel", "cancel-edit", true, state.busy) + "</div></div>";
+}
+
+function roleRow(role, qualified) {
+  const open = Boolean(state.edit) && state.edit.kind === "role" &&
+               state.edit.was === role.id;
+  return '<li data-on="' + open + '"><p><span class="chip">' + esc(role.id) +
+    "</span></p><p>" + esc(role.name || role.id) + '<span class="says">' +
+    esc(qualified + " qualified") + "</span></p>" +
+    '<p class="doing">' + press("Edit", "edit-role", true, state.busy, role.id) +
+    press("Remove", "drop-role", true, state.busy, role.id) + "</p></li>";
+}
+
+async function saveRole() {
+  const edit = state.edit;
+  const inst = state.instance;
+  if (!edit || !inst || state.busy) return;
+  const id = (edit.id || "").trim();
+  const name = (edit.name || "").trim();
+  const stop = word => { edit.error = word; render(); };
+  if (!/^[A-Za-z0-9_.:-]+$/.test(id)) {
+    return stop("A short code can hold letters, digits and - _ . : — nothing " +
+                "else, because the demand and the rules name the role by it.");
+  }
+  if (!edit.was && inst.roles.some(one => one.id === id)) {
+    return stop(id + " is already a role.");
+  }
+  const role = { id: id, name: name || id };
+  edit.error = "";
+  await commit({ roles: edit.was
+    ? inst.roles.map(one => one.id === edit.was ? role : one)
+    : inst.roles.concat([role]) },
+    edit.was ? "Saved the " + id + " role" : "Added the " + id + " role", true);
+}
+
+async function removeRole(id) {
+  const inst = state.instance;
+  if (!inst || state.busy) return;
+  const role = inst.roles.filter(one => one.id === id)[0];
+  if (!role) return;
+  const held = holdsRole(inst, id);
+  const lines = inst.demand.filter(line => line.role === id);
+  const named = namedInRules(inst, "role", id);
+  if (!state.schema && inst.rules.length) {
+    say("Cannot tell what names " + id + " yet.", "The rule catalogue could not be " +
+        "read from the engine, so a rule naming this role might be missed.", "bad");
+    return;
+  }
+  const holding = [];
+  if (held.length) holding.push(held.length + " on the roll hold it");
+  if (lines.length) holding.push(lines.length + " demand line(s) ask for it");
+  if (named.length) holding.push(named.length + " rule(s) name it");
+  if (holding.length) {
+    say("The " + id + " role is still in use.", inWords(holding) +
+        " — take it off them first, then remove the role.", "bad");
+    return;
+  }
+  await commit({ roles: inst.roles.filter(one => one.id !== id) },
+               "Removed the " + id + " role", true);
 }
 
 function shiftEdit(shift) {
-  return { kind: "shift", id: shift.id, name: shift.name || "",
+  if (!shift) {
+    return { kind: "shift", was: "", id: "", name: "", start: "", hours: "",
+             night: false, error: "" };
+  }
+  return { kind: "shift", was: shift.id, id: shift.id, name: shift.name || "",
            start: clock(shift.start_min),
            hours: String(shift.duration_min / 60),
            night: Boolean(shift.counts_as_night), error: "" };
@@ -455,15 +718,24 @@ function shiftTrial() {
 function shiftSlip() {
   const edit = state.edit;
   const trial = shiftTrial();
-  return '<div class="slip"><h3>Edit the ' + esc(edit.id) + " shift</h3>" +
-    '<p class="note"><b>The letter stays as it is.</b> Every line of demand and ' +
-    "every rule that names a shift is keyed to it, so renaming it would leave them " +
-    "pointing at nothing. The clock time, the length and whether it counts as a " +
+  return '<div class="slip"><h3>' + (edit.was
+    ? "Edit the " + esc(edit.id) + " shift" : "Add a shift") + "</h3>" +
+    '<p class="note"><b>' + (edit.was
+      ? "The letter stays as it is." : "Give it the letter the office uses.") +
+    "</b> Every line of demand and " +
+    "every rule that names a shift is keyed to it, so " + (edit.was
+      ? "renaming it would leave them pointing at nothing"
+      : "the letter is what they will name") +
+    ". The clock time, the length and whether it counts as a " +
     "night are yours — and the night flag is what the night rules and the rest gaps " +
     "are read against, not the hour on the clock.</p>" +
     (edit.error ? '<p class="warn">' + esc(edit.error) + "</p>" : "") +
+    fieldRow("Letter", true, edit.was
+      ? '<input type="text" aria-label="Letter" value="' + esc(edit.id) +
+        '" disabled>'
+      : textField("Letter", "edit", edit.id, "M, E, N …", "id")) +
     fieldRow("Name", false,
-      textField("Name", "edit", edit.name, edit.id, "name")) +
+      textField("Name", "edit", edit.name, edit.id || "what it is called", "name")) +
     fieldRow("Starts at", true, '<input type="time" aria-label="Starts at" ' +
       'data-set="edit" data-name="start" value="' + esc(edit.start) + '">') +
     fieldRow("Hours long", true,
@@ -479,13 +751,14 @@ function shiftSlip() {
     (trial ? "" : '<p class="warn">Give a clock time and a length between a ' +
       "quarter of an hour and 24 hours.</p>") +
     '<div class="doing">' +
-    press("Save the shift", "save-shift", false, state.busy || !trial) +
+    press(edit.was ? "Save the shift" : "Add the shift", "save-shift", false,
+          state.busy || !trial) +
     press("Cancel", "cancel-edit", true, state.busy) + "</div></div>";
 }
 
 function shiftRow(shift, needed) {
   const open = Boolean(state.edit) && state.edit.kind === "shift" &&
-               state.edit.id === shift.id;
+               state.edit.was === shift.id;
   return '<li data-on="' + open + '"><p><span class="chip' +
     (shift.counts_as_night ? " night" : "") + '">' + esc(shift.id) +
     "</span></p><p>" + esc(shift.name || shift.id) + '<span class="says">' +
@@ -494,8 +767,32 @@ function shiftRow(shift, needed) {
         (shift.counts_as_night ? " · counts as a night" : "") + " · " +
         (needed[shift.id] || 0) + " needed this month") + "</span></p>" +
     '<p class="doing">' + press("Edit", "edit-shift", true, state.busy, shift.id) +
-    "</p></li>";
+    press("Remove", "drop-shift", true, state.busy, shift.id) + "</p></li>";
 }
+
+async function removeShift(id) {
+  const inst = state.instance;
+  if (!inst || state.busy) return;
+  if (!inst.shifts.some(one => one.id === id)) return;
+  const lines = inst.demand.filter(line => line.shift === id);
+  const named = namedInRules(inst, "shift", id);
+  if (!state.schema && inst.rules.length) {
+    say("Cannot tell what names " + id + " yet.", "The rule catalogue could not be " +
+        "read from the engine, so a rule naming this shift might be missed.", "bad");
+    return;
+  }
+  const holding = [];
+  if (lines.length) holding.push(lines.length + " demand line(s) ask for it");
+  if (named.length) holding.push(named.length + " rule(s) name it");
+  if (holding.length) {
+    say("The " + id + " shift is still in use.", inWords(holding) +
+        " — clear those first, then remove the shift.", "bad");
+    return;
+  }
+  await commit({ shifts: inst.shifts.filter(one => one.id !== id) },
+               "Removed the " + id + " shift", true);
+}
+
 
 const MARKS = { unavailable: "away", day_off_request: "asked off",
                 shift_off_request: "asked off", shift_request: "asked for",
@@ -650,23 +947,159 @@ function personFinder(inst) {
       "already fix about their days.</p>");
 }
 
+function demandShapes(inst) {
+  const byDay = demandByDay(inst);
+  const resting = restDays(inst);
+  const found = { working: null, weekend: null };
+  let mixed = false;
+  for (let day = 0; day < inst.horizon.num_days; day += 1) {
+    const kind = resting(addDays(inst.horizon.start, day)) ? "weekend" : "working";
+    const lines = byDay[day] || [];
+    if (found[kind] === null) found[kind] = lines;
+    else if (shapeKey(found[kind]) !== shapeKey(lines)) mixed = true;
+  }
+  return { working: found.working || [], weekend: found.weekend || [],
+           mixed: mixed };
+}
+
+function demandEdit(inst) {
+  const shapes = demandShapes(inst);
+  const need = {};
+  ["working", "weekend"].forEach(kind => {
+    shapes[kind].forEach(line => {
+      need[kind + ":" + line.shift + ":" + line.role] = String(line.required);
+    });
+  });
+  return { kind: "demand", need: need, mixed: shapes.mixed, error: "" };
+}
+
+function demandTrial() {
+  const edit = state.edit;
+  const inst = state.instance;
+  if (!edit || edit.kind !== "demand" || !inst) return null;
+  const asked = {};
+  let sound = true;
+  Object.keys(edit.need).forEach(key => {
+    const text = String(edit.need[key]).trim();
+    if (!text) return;
+    const count = Number(text);
+    if (!isFinite(count) || count < 0 || count % 1) { sound = false; return; }
+    if (count > 0) asked[key] = count;
+  });
+  if (!sound) return null;
+  const resting = restDays(inst);
+  const lines = [];
+  const each = { working: 0, weekend: 0 };
+  let total = 0;
+  for (let day = 0; day < inst.horizon.num_days; day += 1) {
+    const kind = resting(addDays(inst.horizon.start, day)) ? "weekend" : "working";
+    inst.shifts.forEach(shift => inst.roles.forEach(role => {
+      const count = asked[kind + ":" + shift.id + ":" + role.id];
+      if (!count) return;
+      lines.push({ day: day, shift: shift.id, role: role.id, required: count });
+      total += count;
+    }));
+  }
+  ["working", "weekend"].forEach(kind => {
+    Object.keys(asked).forEach(key => {
+      if (key.indexOf(kind + ":") === 0) each[kind] += asked[key];
+    });
+  });
+  return { demand: lines, total: total, each: each };
+}
+
+function needTable(kind, inst) {
+  const edit = state.edit;
+  const when = kind === "working" ? "working day" : "rest day";
+  return '<table class="need"><caption>Each ' + when + "</caption><thead><tr>" +
+    "<th scope=\"col\">Shift</th>" + inst.roles.map(role =>
+      '<th scope="col">' + esc(role.id) + "</th>").join("") + "</tr></thead><tbody>" +
+    inst.shifts.map(shift => '<tr><th scope="row">' + esc(shift.id) +
+      "<i>" + esc(clock(shift.start_min)) + "</i></th>" +
+      inst.roles.map(role => {
+        const key = kind + ":" + shift.id + ":" + role.id;
+        return "<td>" + numberField(role.id + " on the " + shift.id +
+          " shift, each " + when, "need", key, edit.need[key], "1", 0) + "</td>";
+      }).join("") + "</tr>").join("") + "</tbody></table>";
+}
+
+function demandSlip() {
+  const edit = state.edit;
+  const inst = state.instance;
+  const trial = demandTrial();
+  const off = dates(inst).filter(restDays(inst)).length;
+  return '<div class="slip"><h3>How many of each role, on each shift</h3>' +
+    '<p class="note"><b>The demand is what a roster is measured against.</b> Say ' +
+    "how many people each role needs on each shift — once for a working day, once " +
+    "for a rest day — and those figures are laid across the whole month to its own " +
+    "calendar. Leave a cell empty where nobody is needed.</p>" +
+    (edit.mixed ? '<p class="warn">The demand already on the desk is not the same ' +
+      "on every working day, so it cannot be shown as one table. Applying this " +
+      "would replace it.</p>" : "") +
+    (edit.error ? '<p class="warn">' + esc(edit.error) + "</p>" : "") +
+    needTable("working", inst) +
+    (off ? needTable("weekend", inst)
+      : '<p class="key">This month has no weekly rest day, so every day takes the ' +
+        "figures above.</p>") +
+    (trial ? ledger([
+      ["Each working day", trial.each.working + " person-shifts"],
+      ["Each rest day", off ? trial.each.weekend + " person-shifts"
+                            : "there are none this month"],
+      ["Over the month", trial.total + " person-shifts on " + trial.demand.length +
+                         " lines"]])
+      : '<p class="warn">Every figure must be a whole number of people, or ' +
+        "empty.</p>") +
+    '<div class="doing">' +
+    press("Apply the demand", "save-demand", false, state.busy || !trial) +
+    press("Cancel", "cancel-edit", true, state.busy) + "</div></div>";
+}
+
+async function saveDemand() {
+  const edit = state.edit;
+  if (!edit || edit.kind !== "demand" || state.busy) return;
+  const trial = demandTrial();
+  if (!trial) {
+    edit.error = "Every figure must be a whole number of people, or left empty.";
+    render();
+    return;
+  }
+  edit.error = "";
+  await commit({ demand: trial.demand }, trial.total
+    ? "The month now asks for " + trial.total + " person-shifts over " +
+      trial.demand.length + " lines"
+    : "The month now asks for nothing — no duty is demanded", true);
+}
+
 function shiftsPanel() {
   const inst = state.instance;
-  if (!inst) return nothingYet("The shifts and the demand arrive with the month.",
-                               OPEN_IT, "sample");
+  if (!inst) return nothingYet("The shifts and the demand belong to a month.",
+                               START_IT, "go-period");
   const needed = {};
   let total = 0;
   inst.demand.forEach(line => {
     needed[line.shift] = (needed[line.shift] || 0) + line.required;
     total += line.required;
   });
-  const open = state.edit && state.edit.kind === "shift";
+  const open = state.edit && (state.edit.kind === "shift" ||
+                              state.edit.kind === "demand");
+  const can = inst.shifts.length > 0 && inst.roles.length > 0;
   return tally([["shifts a day", inst.shifts.length],
                 ["person-shifts to fill", total],
                 ["demand lines", inst.demand.length]]) +
-    (open ? shiftSlip() : "") +
-    '<ul class="entries">' +
-    inst.shifts.map(shift => shiftRow(shift, needed)).join("") + "</ul>" +
+    (open ? (state.edit.kind === "shift" ? shiftSlip() : demandSlip())
+      : '<div class="doing">' +
+        press("Add a shift", "add-shift", false, state.busy) +
+        press(inst.demand.length ? "Change the demand" : "Set the demand",
+              "edit-demand", true, state.busy || !can) + "</div>") +
+    (inst.shifts.length ? '<ul class="entries">' +
+      inst.shifts.map(shift => shiftRow(shift, needed)).join("") + "</ul>"
+      : '<p class="none">No shifts yet. A shift is a stretch of the day somebody ' +
+        "can be put on duty for — add the ones the office works.</p>") +
+    (can && !inst.demand.length ? '<p class="key">Nothing is demanded yet, so a ' +
+      "roster would have no duty to fill. Set the demand to say how many of each " +
+      "role each shift needs.</p>" : "") +
+    (!inst.roles.length && inst.shifts.length ? '<p class="key">The demand is asked ' +
+      "for by role, so add a role on step 2 before setting it.</p>" : "") +
     personFinder(inst);
 }
 
@@ -1233,7 +1666,8 @@ function memoPanel() {
 
 function rulesPanel() {
   const inst = state.instance;
-  if (!inst) return nothingYet("The rules arrive with the month.", OPEN_IT, "sample");
+  if (!inst) return nothingYet("The rules arrive with the month.",
+                               START_IT, "go-period");
   const hard = inst.rules.filter(rule => rule.severity === "hard");
   const kinds = {};
   inst.rules.forEach(rule => { kinds[rule.type] = true; });
@@ -1257,7 +1691,13 @@ function rulesPanel() {
 
 function checkPanel() {
   if (!state.instance) return nothingYet("There is no month to check yet.",
-                                         OPEN_IT, "sample");
+                                         START_IT, "go-period");
+  if (!ready(state.instance)) {
+    return '<div class="empty"><p>The engine weighs a whole month at once, so it ' +
+      "cannot judge this one until it has a role, a shift and somebody on the " +
+      "roll. " + esc(stillNeeds(state.instance)) + "</p>" +
+      press("Back to the roll", "go-staff") + "</div>";
+  }
   const out = state.check;
   if (!out) return '<div class="empty"><p>The engine will weigh what every duty ' +
     "needs against the staff who are qualified and free, and name anything that " +
@@ -1390,7 +1830,12 @@ function personCard(out) {
 
 function rosterPanel() {
   if (!state.instance) return nothingYet("There is no month to roster yet.",
-                                         OPEN_IT, "sample");
+                                         START_IT, "go-period");
+  if (!ready(state.instance)) {
+    return '<div class="empty"><p>A roster cannot be generated from a month that ' +
+      "is still being put together. " + esc(stillNeeds(state.instance)) + "</p>" +
+      press("Back to the roll", "go-staff") + "</div>";
+  }
   const out = state.solved;
   if (!out) {
     return '<div class="empty"><p>The engine covers every duty first, then spends ' +
@@ -1447,6 +1892,9 @@ function heldBy(node) {
 }
 
 function render() {
+  if (!state.instance && (!state.edit || state.edit.kind !== "start")) {
+    state.edit = newStart();
+  }
   const held = heldBy(document.activeElement);
   Object.keys(PANELS).forEach(name => {
     panel(name).innerHTML = PANELS[name]();
@@ -1497,35 +1945,16 @@ async function checkEngine() {
   render();
 }
 
-async function loadSample() {
-  say("Fetching the sample month…", "");
-  try {
-    const out = await api("/sample");
-    state.instance = out.instance;
-    state.check = null;
-    state.solved = null;
-    state.draft = null;
-    state.dropped = null;
-    state.dirty = false;
-    state.edit = null;
-    state.gone = null;
-    state.pick = "";
-    state.pickFind = "";
-    state.staffFind = "";
-    state.lit = "";
-    state.who = "";
-    render();
-    say(state.instance.employees.length + " staff over " +
-        state.instance.horizon.num_days + " days.",
-        "Steps 2 to 4 read it back. Step 5 asks whether the month is possible, " +
-        "step 6 builds it.");
-  } catch (err) {
-    say("Could not open the sample month.", err.message, "bad");
-  }
+function notYet() {
+  say("The month is not finished yet.", "The engine judges a whole month at " +
+      "once, so it needs a role, a shift and somebody on the roll before it can " +
+      "say anything. " + stillNeeds(state.instance), "bad");
+  render();
 }
 
 async function runCheck() {
   if (!state.instance) return;
+  if (!ready(state.instance)) return notYet();
   say("Weighing the demand against the staff…", "");
   try {
     const out = await api("/validate", { instance: state.instance });
@@ -1542,6 +1971,7 @@ async function runCheck() {
 
 async function runSolve() {
   if (!state.instance || state.busy) return;
+  if (!ready(state.instance)) return notYet();
   state.busy = true;
   state.seed += 1;
   render();
@@ -1586,9 +2016,27 @@ function plainly(err) {
   return why;
 }
 
+function hold(trial, told, fresh, had) {
+  state.instance = trial;
+  state.check = null;
+  state.draft = null;
+  state.edit = null;
+  if (fresh) {
+    state.solved = null;
+    state.lit = "";
+    state.who = "";
+    state.dirty = false;
+  } else state.dirty = had;
+  say(told, "The month is still being put together, so the engine has not been " +
+      "asked to judge it. " + stillNeeds(trial));
+  render();
+  return true;
+}
+
 async function commit(patch, told, fresh) {
   const trial = Object.assign({}, state.instance, patch);
   const had = Boolean(state.solved);
+  if (!ready(trial)) return hold(trial, told, fresh, had);
   state.busy = true;
   render();
   try {
@@ -1734,20 +2182,34 @@ async function savePeriod() {
 
 function openEdit(kind, id) {
   const inst = state.instance;
-  if (!inst || state.busy) return;
+  if (state.busy) return;
+  if (kind === "start") {
+    state.edit = newStart();
+    render();
+    return;
+  }
+  if (!inst) return;
   if (kind === "period") state.edit = { kind: "period", start: inst.horizon.start,
                                         days: String(inst.horizon.num_days),
+                                        weekend: (inst.horizon.weekend_days || [])
+                                          .map(String),
                                         error: "" };
   if (kind === "person") {
     const person = id ? inst.employees.filter(one => one.id === id)[0] : null;
     if (id && !person) return;
     state.edit = personEdit(person);
   }
+  if (kind === "role") {
+    const role = id ? inst.roles.filter(one => one.id === id)[0] : null;
+    if (id && !role) return;
+    state.edit = roleEdit(role);
+  }
   if (kind === "shift") {
-    const shift = inst.shifts.filter(one => one.id === id)[0];
-    if (!shift) return;
+    const shift = id ? inst.shifts.filter(one => one.id === id)[0] : null;
+    if (id && !shift) return;
     state.edit = shiftEdit(shift);
   }
+  if (kind === "demand") state.edit = demandEdit(inst);
   render();
 }
 
@@ -1770,7 +2232,7 @@ async function savePerson() {
                 "be given.");
   }
   const person = { id: id, name: name || id, roles: edit.roles.slice(),
-                   contract: (edit.contract || "").trim() || "permanent" };
+                   contract: (edit.contract || "").trim() };
   const patch = { employees: edit.was
     ? inst.employees.map(one => one.id === edit.was ? person : one)
     : inst.employees.concat([person]) };
@@ -1794,10 +2256,6 @@ async function removePerson(id) {
   if (!inst || state.busy) return;
   const person = inst.employees.filter(one => one.id === id)[0];
   if (!person) return;
-  if (inst.employees.length < 2) {
-    say("The roll cannot be emptied.", "A month needs somebody to work it.", "bad");
-    return;
-  }
   const out = withoutPerson(inst, id);
   const gone = { person: person, at: inst.employees.indexOf(person),
                  lost: out.lost, trimmed: out.trimmed };
@@ -1839,15 +2297,28 @@ async function saveShift() {
   const inst = state.instance;
   const trial = edit ? shiftTrial() : null;
   if (!edit || !inst || !trial || state.busy) return;
+  const id = (edit.id || "").trim();
+  if (!edit.was) {
+    const stop = word => { edit.error = word; render(); };
+    if (!/^[A-Za-z0-9_.:-]+$/.test(id)) {
+      return stop("A shift letter can hold letters, digits and - _ . : — nothing " +
+                  "else, because the demand and the rules name the shift by it.");
+    }
+    if (inst.shifts.some(one => one.id === id)) {
+      return stop(id + " is already a shift.");
+    }
+  }
   edit.error = "";
-  const shifts = inst.shifts.map(shift => shift.id === edit.id
-    ? Object.assign({}, shift, { name: (edit.name || "").trim() || shift.id,
-        start_min: trial.start_min, duration_min: trial.duration_min,
-        counts_as_night: Boolean(edit.night) })
-    : shift);
-  await commit({ shifts: shifts }, edit.id + " now runs " +
-    clock(trial.start_min) + "–" + clock(trial.start_min + trial.duration_min) +
-    " · " + hours(trial.duration_min) +
+  const made = { id: id, name: (edit.name || "").trim() || id,
+                 start_min: trial.start_min, duration_min: trial.duration_min,
+                 counts_as_night: Boolean(edit.night) };
+  const shifts = edit.was
+    ? inst.shifts.map(shift => shift.id === edit.was
+        ? Object.assign({}, shift, made) : shift)
+    : inst.shifts.concat([made]);
+  await commit({ shifts: shifts }, (edit.was ? id + " now runs " : "Added " + id +
+    ", running ") + clock(trial.start_min) + "–" +
+    clock(trial.start_min + trial.duration_min) + " · " + hours(trial.duration_min) +
     (edit.night ? " · counts as a night" : ""), true);
 }
 
@@ -2073,10 +2544,18 @@ function setField(what, value, name, on) {
     if (what === "edit") edit[name] = value;
     else if (what === "edit-flag") edit[name] = Boolean(on);
     else {
-      edit.roles = on ? edit.roles.concat([value]).sort()
-                      : edit.roles.filter(one => one !== value);
+      const held = edit[name] || [];
+      edit[name] = on ? held.concat([value]).sort()
+                      : held.filter(one => one !== value);
     }
     return true;
+  }
+  if (what === "need") {
+    const edit = state.edit;
+    if (!edit || edit.kind !== "demand") return false;
+    edit.error = "";
+    edit.need[name] = value;
+    return false;
   }
   const draft = state.draft;
   if (!draft) return false;
@@ -2153,7 +2632,8 @@ document.querySelector(".sheet").addEventListener("click", event => {
   const button = event.target.closest("button[data-do]");
   if (!button || button.disabled) return;
   const doing = button.dataset.do;
-  if (doing === "sample") loadSample();
+  if (doing === "go-period") goTo("period");
+  if (doing === "go-staff") goTo("staff");
   if (doing === "check") runCheck();
   if (doing === "solve") runSolve();
   if (doing === "add-rule") startDraft();
@@ -2172,13 +2652,23 @@ document.querySelector(".sheet").addEventListener("click", event => {
   if (doing === "who") showWho(button.dataset.id);
   if (doing === "edit-period") openEdit("period");
   if (doing === "save-period") savePeriod();
+  if (doing === "start-over") openEdit("start");
+  if (doing === "start-month") startMonth();
   if (doing === "add-person") openEdit("person", "");
   if (doing === "edit-person") openEdit("person", button.dataset.id);
   if (doing === "save-person") savePerson();
   if (doing === "drop-person") removePerson(button.dataset.id);
   if (doing === "unremove") unremove();
+  if (doing === "add-role") openEdit("role", "");
+  if (doing === "edit-role") openEdit("role", button.dataset.id);
+  if (doing === "save-role") saveRole();
+  if (doing === "drop-role") removeRole(button.dataset.id);
+  if (doing === "add-shift") openEdit("shift", "");
   if (doing === "edit-shift") openEdit("shift", button.dataset.id);
   if (doing === "save-shift") saveShift();
+  if (doing === "drop-shift") removeShift(button.dataset.id);
+  if (doing === "edit-demand") openEdit("demand");
+  if (doing === "save-demand") saveDemand();
   if (doing === "cancel-edit") { state.edit = null; render(); }
   if (doing === "pick") pickWho(button.dataset.id);
 });
