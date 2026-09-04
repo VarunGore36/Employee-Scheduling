@@ -35,6 +35,23 @@ ABBREVIATIONS = {"no.": "number", "nos.": "numbers", "e.g.": "for example",
                  "mr.": "mr", "mrs.": "mrs", "ms.": "ms", "dr.": "dr",
                  "smt.": "smt", "sr.": "sr", "jr.": "jr"}
 
+CONTRACTIONS = (("can't", "cannot"), ("won't", "will not"),
+                ("shan't", "shall not"), ("ain't", "is not"), ("n't", " not"))
+SLASH_UNITS = {"wk": "week", "week": "week", "day": "day", "month": "month",
+               "mth": "month", "shift": "shift", "duty": "duty", "head": "head",
+               "person": "person", "man": "man", "hr": "hour", "hour": "hour"}
+
+
+def expand_short(text: str) -> str:
+    """Contractions and slashed units written out, so one set of cues reads both."""
+    out = text
+    for short, plain in CONTRACTIONS:
+        out = out.replace(short, plain)
+    out = re.sub(r"\s*/\s*(" + "|".join(SLASH_UNITS) + r")\b",
+                 lambda m: " per " + SLASH_UNITS[m.group(1)], out)
+    out = re.sub(r"\bp\.?\s?w\.?(?=\s|$)", "per week", out)
+    return re.sub(r"\bper wk\b", "per week", out)
+
 
 RATE_BEFORE = re.compile(r"\d+(?:\.\d+)?\s*(?:hours?|hrs?|shifts?|duties|duty|days?|"
                          r"nights?|weekends?|people|staff|persons?|times?)?\s*$")
@@ -97,6 +114,7 @@ def normalise(statement: str) -> str:
         s = s.replace(fancy, plain)
     s = re.sub(r"^[\s\-*•·>]+", "", s)
     s = re.sub(r"^\(?\d{1,2}[.)]\s+", "", s)
+    s = expand_short(s)
     s = re.sub(r"\bno[\s-]one\b", "nobody", s)
     s = re.sub(r"\bcan\s*not\b", "cannot", s)
     s = re.sub(r"\s+", " ", s).strip()
@@ -104,28 +122,38 @@ def normalise(statement: str) -> str:
 
 
 N = r"(\d+(?:\.\d+)?)"
-MOST = (r"(?:at most|no more than|not more than|maximum(?: of)?|max(?:imum)?|"
-        r"up ?to|upper limit of|cap(?:ped)? (?:at|to)|limit(?:ed)? to|"
-        r"no longer than|not exceed(?:ing)?)")
+MOST = (r"(?:at most|at the most|no more than|not more than|maximum(?: of)?|"
+        r"max(?:imum)?|up ?to|upper limit of|cap(?:ped)? (?:at|to)|"
+        r"limit(?:ed)? to|no(?:t)? (?:longer|higher|greater|larger|bigger) than|"
+        r"not exceed(?:ing)?)")
 LEAST = (r"(?:at least|atleast|minimum(?: of)?|min(?:imum)?|no less than|"
-         r"not less than|no fewer than|not fewer than|at the very least)")
+         r"not less than|no fewer than|not fewer than|at the very least|"
+         r"no(?:t)? (?:lower|smaller|shorter) than)")
 EXACTLY = r"(?:exactly|precisely|strictly)"
 RUN = (r"(?:in a row|in row|consecutively|at a stretch|at a time|continuously|"
-       r"back[- ]to[- ]back|on the trot|running|straight|non[- ]stop|at one go)")
+       r"back[- ]to[- ]back|on the trot|running|straight|non[- ]stop|at one go|"
+       r"(?:a |one |the )?runs? of|stretch(?:es)? of|spells? of|runs?|spells?|"
+       r"end on end|one after (?:the other|another))")
 ADJ_RUN = (r"(?:consecutive|continuous|straight|successive|unbroken|running|"
-           r"back[- ]to[- ]back|at a stretch)")
+           r"back[- ]to[- ]back|at a stretch|on end)")
 PER_WEEK = (r"(?:per|a|each|every|in a|in any|in one|within a|within any|over a|"
             r"during a|of the|of a|of any)\s+(?:calendar\s+|working\s+)?week")
 PER_MONTH = (r"(?:per|a|each|every|in a|in the|in any|over the|during the|for the|"
              r"in one)\s+(?:calendar\s+)?"
              r"(?:month|roster(?: period| cycle)?|period|cycle|fortnight)")
+ROLLING_WEEK = (r"\brolling\b|\bany 7 (?:consecutive )?days\b|"
+                r"\bany period of 7 days\b|\bany 7[- ]day (?:window|period|stretch|"
+                r"span|block)\b|\bany window of 7 days\b|\bwithin any 7 days\b")
 DAY_WORD = r"(?:(?:working|work|duty|rostered|on)\s+)?days?"
-OFF_WORD = (r"(?:days?\s+off|off\s+days?|rest\s+days?|weekly\s+offs?|offs|"
-            r"holidays?|breaks?)")
+OFF_WORD = (r"(?:days?\s+off|off\s+days?|rest\s+days?|weekly\s+offs?|"
+            r"(?<!hours )(?<!hrs )offs?|holidays?|breaks?)")
 PEOPLE = (r"(?:people|persons?|staff(?:\s+members?)?|employees?|workers?|"
           r"members?|hands|bodies|heads?)")
 SHIFT_WORD = r"(?:shifts?|duties|duty|turns?)"
 HOUR_WORD = r"(?:hours?|hrs?)"
+COUNTED = (r"(?:hours?|hrs?|days?|shifts?|duties|duty|nights?|weekends?|offs?|"
+           r"people|persons?|staff|turns?|breaks?|holidays?|leaves?|"
+           r"hands|heads?)")
 
 
 def num(value) -> float:
@@ -175,8 +203,77 @@ def bound_for(text: str, subject: str) -> tuple[float | None, float | None] | No
 
 PROHIBITION = re.compile(
     r"\b(?:not|never|nobody|none|cannot|can't|won't|shouldn't|mustn't|no|avoid|"
-    r"prohibit\w*|banned|barred|forbidden|restrict\w*|ceiling|exceed\w*|"
+    r"prohibit\w*|banned|barred|forbidden|restrict\w*|ceiling|exceed\w*|excess|"
     r"maximum|max|cap|capped|limit\w*)\b")
+CEILING_PHRASE = re.compile(r"\bin excess of\b|\bupwards of\b|\bbeyond\s+\d|"
+                            r"\bnot to (?:exceed|cross|go)\b")
+
+
+def forbids(norm: str) -> bool:
+    """Whether the statement forbids something, which fixes which way a bound goes."""
+    return bool(PROHIBITION.search(norm) or CEILING_PHRASE.search(norm))
+
+
+MORE = (r"(?:more than|greater than|over|above|beyond|past|in excess of|"
+        r"upwards of|exceed(?:s|ed|ing)?)")
+FEWER = r"(?:less than|fewer than|lesser than|under|below|beneath|short of)"
+
+CEILING_NOUN = r"(?:max(?:imum)?|ceiling|upper limit|limit|cap|most)"
+FLOOR_NOUN = r"(?:min(?:imum)?|floor|lower limit|least)"
+SEP = r"(?:\s*[:=]\s*|\s+-\s+)"
+CUE_AT = (r"\b(?:cap(?:s|ped)?|limit(?:s|ed)?|restrict(?:s|ed)?|keep(?:s)?|held|"
+          r"hold(?:s)?|peg(?:s|ged)?|stop(?:s|ped)?)\s+"
+          r"((?:[a-z]+\s+){0,4}?)(?:at|to)\s+" + N + r"\b")
+
+SWAP_HEADING = re.compile(rf"\b({MOST}|{LEAST})\s+((?:[a-z]+[\s/-]+){{0,4}}?"
+                          rf"{COUNTED}\b[a-z\s/-]{{0,16}}?){SEP}{N}\b")
+HEAD_CEILING = re.compile(rf"\b(?:upper limit|{CEILING_NOUN}){SEP}(?=\d)")
+HEAD_FLOOR = re.compile(rf"\b(?:lower limit|{FLOOR_NOUN}){SEP}(?=\d)")
+SPELT_PERIOD = re.compile(rf"\b(weekly|monthly|fortnightly|daily)\s+"
+                          rf"({CEILING_NOUN}|{FLOOR_NOUN})\b")
+PERIODS = {"weekly": "week", "monthly": "month", "fortnightly": "fortnight",
+           "daily": "day"}
+TAIL = rf"([a-z\s/-]{{0,20}}?)\s*(?:is|are)?\s*(?:at\s+)?(?:the\s+)?"
+POSTFIX_CEILING = re.compile(rf"\b{N}\s+((?:[a-z]+[\s/-]+){{0,3}}?{COUNTED}\b)"
+                             rf"{TAIL}{CEILING_NOUN}\b")
+POSTFIX_FLOOR = re.compile(rf"\b{N}\s+((?:[a-z]+[\s/-]+){{0,3}}?{COUNTED}\b)"
+                           rf"{TAIL}{FLOOR_NOUN}\b")
+CARRIES_ON = re.compile(rf"\b(?:and|or|but|nor|then|plus|while|except|"
+                        rf"{CEILING_NOUN}|{FLOOR_NOUN})\b")
+POSTFIX_BARE = re.compile(rf"\b{N}\s+(?:is\s+|are\s+)?(?:at\s+)?(?:the\s+)?"
+                          rf"({CEILING_NOUN}|{FLOOR_NOUN})\b(?!\s*\d)")
+SPAN_SAID = re.compile(rf"\bbetween\s+{N}\b|\b{N}\s*(?:-|to)\s*{N}\b")
+
+
+def _bare(m: re.Match) -> str:
+    """'6 at most' says what 'at most 6' says, with the limit standing alone."""
+    word = "at most" if re.fullmatch(CEILING_NOUN, m.group(2)) else "at least"
+    return f"{word} {m.group(1)}"
+
+
+def _postfix(word: str):
+    """A trailing limit belongs to the number only if nothing sits between them."""
+    def swap(m: re.Match) -> str:
+        if CARRIES_ON.search(m.group(3)):
+            return m.group(0)
+        return f"{word} {m.group(1)} {m.group(2)} {m.group(3)}"
+    return swap
+
+
+def rewrite_bounds(norm: str) -> str:
+    """A limit stated as a heading, a cue or a trailing noun, put in front of its
+    number where the patterns look for it."""
+    out = SWAP_HEADING.sub(lambda m: f"{m.group(1)} {m.group(3)} {m.group(2)}", norm)
+    out = HEAD_CEILING.sub("at most ", out)
+    out = HEAD_FLOOR.sub("at least ", out)
+    out = SPELT_PERIOD.sub(lambda m: f"{m.group(2)} per {PERIODS[m.group(1)]}", out)
+    out = re.sub(CUE_AT, lambda m: f"{m.group(1)}at most {m.group(2)}", out)
+    out = POSTFIX_CEILING.sub(_postfix("at most"), out)
+    out = POSTFIX_FLOOR.sub(_postfix("at least"), out)
+    if not SPAN_SAID.search(out):
+        out = POSTFIX_BARE.sub(_bare, out)
+    return re.sub(r"\s+", " ", out).strip()
+
 
 COMPARATIVES = (
     (r"\bnot\s+(?:\w+\s+){0,4}?more than\b", "at most"),
@@ -187,25 +284,36 @@ COMPARATIVES = (
     (r"\bnever\s+(?:\w+\s+){0,3}?(?:less|fewer) than\b", "at least"),
     (r"\bnobody\s+(?:\w+\s+){0,3}?more than\b", "at most"),
     (r"\bnobody\s+(?:\w+\s+){0,3}?(?:less|fewer) than\b", "at least"),
-    (r"\bno\s+\w+\s+(?:\w+\s+){0,3}?more than\b", "at most"),
+    (r"\bno\s+(\w+\s+(?:\w+\s+){0,3}?)more than\b", r"\1at most"),
+    (r"\bnot\s+((?:\w+\s+){0,4}?)(?:longer|higher|greater|larger|bigger) than\b",
+     r"\1at most"),
+    (r"\bnever\s+((?:\w+\s+){0,3}?)(?:longer|higher|greater|larger|bigger) than\b",
+     r"\1at most"),
+    (r"\bnobody\s+((?:\w+\s+){0,3}?)(?:longer|higher|greater|larger|bigger) than\b",
+     r"\1at most"),
+    (r"\bno\s+(\w+\s+(?:\w+\s+){0,3}?)(?:longer|higher|greater|larger|bigger) than\b",
+     r"\1at most"),
+    (r"\bnot\s+((?:\w+\s+){0,4}?)(?:shorter|lower|smaller) than\b", r"\1at least"),
+    (r"\bno\s+(\w+\s+(?:\w+\s+){0,3}?)(?:shorter|lower|smaller) than\b", r"\1at least"),
     (rf"\b{N}\s+or\s+(?:fewer|less|lesser|lower|below|under)\b", r"at most \1"),
     (rf"\b{N}\s+or\s+(?:more|above|over|higher|greater)\b", r"at least \1"),
-    (rf"\bkeep\w*\s+(?:\w+\s+){{0,3}}?to\s+{N}\b", r"at most \1"),
 )
 
 
-def rewrite_comparatives(norm: str) -> tuple[str, list[str]]:
+def rewrite_comparatives(norm: str, lean: str = "") -> tuple[str, list[str]]:
     """'must not work more than 6' becomes the 'at most 6' the patterns expect."""
     notes: list[str] = []
-    out = norm
+    out = rewrite_bounds(norm)
     for pattern, plain in COMPARATIVES:
         out = re.sub(pattern, plain, out)
-    banned = bool(PROHIBITION.search(norm))
-    loose_more = r"(?<!no )(?<!not )\bmore than\s+" + N
-    loose_less = r"(?<!no )(?<!not )\b(?:less|fewer) than\s+" + N
+    banned = forbids(norm) or "ceiling" in lean.split()
+    loose_more = r"(?<!no )(?<!not )\b" + MORE + r"\s+" + N
+    loose_less = r"(?<!no )(?<!not )\b" + FEWER + r"\s+" + N
     if re.search(loose_more, out):
         if banned:
             out = re.sub(loose_more, r"at most \1", out)
+            if "ceiling" in lean.split():
+                notes.append("'more than' was read as the most allowed")
         else:
             out = re.sub(loose_more, lambda m: f"at least {num(m.group(1)) + 1:g}", out)
             notes.append("'more than' was read as a floor one higher, since the "
@@ -213,28 +321,59 @@ def rewrite_comparatives(norm: str) -> tuple[str, list[str]]:
     if re.search(loose_less, out):
         if banned:
             out = re.sub(loose_less, r"at least \1", out)
+            if "ceiling" in lean.split():
+                notes.append("'less than' was read as the least required")
         else:
             out = re.sub(loose_less, lambda m: f"at most {num(m.group(1)) - 1:g}", out)
             notes.append("'less than' was read as a ceiling one lower, since the "
                          "statement forbids nothing")
-    return out, notes
+    return re.sub(r"\s+", " ", out).strip(), notes
 
+
+LEAN_SUFFIX = {"week": "per week", "month": "in the month", "run": "in a row"}
+LEAN_MEANS = {"week": "counted over each week",
+              "month": "counted over the whole roster period",
+              "run": "counted as duties falling in a row"}
+LEAN_NOTE = {
+    "week": "the statement did not say over what stretch, so this reading counts "
+            "each week",
+    "month": "the statement did not say over what stretch, so this reading counts "
+             "the whole roster period",
+    "run": "the statement did not say over what stretch, so this reading counts "
+           "duties falling in a row",
+}
 
 SUBJECTS = (("hours", HOUR_WORD), ("days off", OFF_WORD), ("weekends", r"weekends?"),
             ("nights", r"nights?"), ("people", PEOPLE), ("days", DAY_WORD),
             ("shifts", SHIFT_WORD))
 BOUND_CUE = rf"{MOST}|{LEAST}|{EXACTLY}"
+WEEK_SAID = rf"{PER_WEEK}|\bweekly\b|\bweeks?\s+(?:{BOUND_CUE})"
+MONTH_SAID = rf"{PER_MONTH}|\bmonthly\b|\bmonths?\s+(?:{BOUND_CUE})"
 
 
 def subject_of(pattern: str) -> str:
     """What the bound in one statement counts, or '' when nothing is countable."""
-    for name, words in SUBJECTS:
-        if re.search(rf"\b{words}\b", pattern):
-            return name
+    close = re.search(rf"(?:{BOUND_CUE})\s+\d+(?:\.\d+)?\s+"
+                      rf"((?:[a-z]+\s+){{0,3}}?{COUNTED}(?:\s+[a-z]+){{0,2}})",
+                      pattern)
+    for text in ([close.group(1)] if close else []) + [pattern]:
+        for name, words in SUBJECTS:
+            if re.search(rf"\b{words}\b", text):
+                return name
     return ""
 
 
 JOINT = r"\s*,\s*(?:and\s+)?|\s+and\s+"
+
+
+def borrow(head: str, tail: str) -> tuple[str, str] | None:
+    """'at most 48 hours a week and 5 duties' lends its limit to the second half."""
+    cue = re.search(BOUND_CUE, head)
+    counts = re.search(rf"\b\d+(?:\.\d+)?\s+(?:[a-z]+\s+){{0,3}}?{COUNTED}\b", tail)
+    if not cue or not counts:
+        return None
+    said = f"{cue.group(0)} {tail}"
+    return said, rewrite_comparatives(normalise(said))[0]
 
 
 def split_compound(statement: str) -> list[str]:
@@ -243,6 +382,10 @@ def split_compound(statement: str) -> list[str]:
         halves = [statement[:joint.start()].strip(" ,;"),
                   statement[joint.end():].strip(" ,;")]
         read = [rewrite_comparatives(normalise(half))[0] for half in halves]
+        if re.search(BOUND_CUE, read[0]) and not re.search(BOUND_CUE, read[1]):
+            lent = borrow(read[0], halves[1])
+            if lent:
+                halves[1], read[1] = lent
         if not all(re.search(BOUND_CUE, half) for half in read):
             continue
         counted = [subject_of(half) for half in read]
@@ -341,8 +484,9 @@ SHIFT_SYNONYMS = {
 GUESSED_SHIFTS = {"M": "morning", "E": "evening", "N": "night"}
 CONTRACT_SYNONYMS = {
     "permanent": ("permanent", "regular", "confirmed", "pensionable"),
-    "contract": ("contract", "contractual", "temporary", "temp",
-                 "daily wage", "outsourced", "adhoc", "ad hoc", "on contract"),
+    "contract": ("contract", "contractual", "temporary", "temp", "casual",
+                 "casuals", "daily wage", "daily wager", "outsourced", "adhoc",
+                 "ad hoc", "on contract"),
     "probation": ("probation", "probationer", "trainee", "on probation"),
     "part_time": ("part time", "part-time", "half time", "part timer"),
 }
@@ -492,6 +636,7 @@ class DateScan:
     days: list[str] = field(default_factory=list)
     weekdays: list[int] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    spans: list[tuple[int, int]] = field(default_factory=list)
     problem: str = ""
     found: bool = False
 
@@ -603,6 +748,7 @@ def scan_dates(text: str, horizon: Horizon | None) -> DateScan:
         return scan
     scan.found = True
     spans.sort(key=lambda item: item[0])
+    scan.spans = [(start, end) for start, end, _, _ in spans]
     parts = []
     for start, end, kind, match in spans:
         days, weekdays, problem = _resolve(kind, match, horizon, scan.notes)
@@ -650,6 +796,7 @@ def _finish_dates(scan: DateScan, text: str, days: list[date], weekdays: list[in
         first = days[0]
         days = [first + timedelta(days=i) for i in range(length)]
         scan.notes.append(f"read as {length} days from {first.isoformat()}")
+        scan.spans.append(stretch.span())
     if weekdays:
         if horizon is None:
             scan.problem = _no_period("a weekday name")
@@ -688,6 +835,7 @@ class Draft:
     assumptions: list[str] = field(default_factory=list)
     problem: str = ""
     suggestions: list[str] = field(default_factory=list)
+    readings: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -697,7 +845,29 @@ class Draft:
         return {"line": self.line, "text": self.text, "rule": self.rule,
                 "confidence": self.confidence,
                 "assumptions": list(self.assumptions),
-                "problem": self.problem, "suggestions": list(self.suggestions)}
+                "problem": self.problem, "suggestions": list(self.suggestions),
+                "readings": [dict(r) for r in self.readings]}
+
+
+PERSON_NUMBER = re.compile(r"\b(?:staff|employee|worker|member|person|emp)\s*"
+                           r"(?:no\.?|number|id)?\s*#?\s*\d{1,4}\b|\be\d{1,4}\b")
+FREE_NUMBER = re.compile(r"(?<![\d.:/-])(\d{1,4}(?:\.\d+)?)(?![\d:/-])")
+
+
+def spare_text(pattern: str, names: Names, dates: DateScan) -> str:
+    """The statement with dates and names blanked, so a stray number shows."""
+    out = pattern
+    for start, end in sorted(dates.spans, reverse=True):
+        out = out[:start] + " " * (end - start) + out[end:]
+    for word in names.words:
+        out = re.sub(rf"\b{re.escape(word)}\b", " ", out)
+    return PERSON_NUMBER.sub(" ", out)
+
+
+def stray_numbers(spare: str) -> list[float]:
+    """Numbers the statement states in its own right, which a limit must respect."""
+    return [num(m.group(1)) for m in FREE_NUMBER.finditer(spare)
+            if num(m.group(1)) != 1]
 
 
 @dataclass
@@ -719,10 +889,17 @@ class Statement:
     explicit: bool = False
     night: str = ""
     refusal: Refusal | None = None
+    spare: str = ""
+    numbers: list[float] = field(default_factory=list)
 
     @property
     def shift(self) -> str:
         return self.names.shifts[0] if self.names.shifts else ""
+
+    @property
+    def said_a_number(self) -> bool:
+        """Whether a number of its own sits in the statement, dates and ids aside."""
+        return bool(self.numbers)
 
 
 class Parser:
@@ -754,29 +931,138 @@ class Parser:
         return out
 
     def one(self, line: int, statement: str, note: str = "") -> list[Draft]:
-        ctx = self.context(line, statement)
+        ctx, drafts = self._read(line, statement, note)
+        return self._merge(ctx, line, statement, note, drafts)
+
+    def _read(self, line: int, statement: str, note: str = "",
+              lean: str = "") -> tuple[Statement, list[Draft]]:
+        ctx = self.context(line, statement, lean)
         if note:
             ctx.assumptions.append(note)
         if ctx.refusal:
-            return [Draft(line=line, text=ctx.label, problem=ctx.refusal.problem,
-                          assumptions=list(ctx.assumptions),
-                          suggestions=list(ctx.refusal.suggestions))]
+            return ctx, [Draft(line=line, text=ctx.label,
+                               problem=ctx.refusal.problem,
+                               assumptions=list(ctx.assumptions),
+                               suggestions=list(ctx.refusal.suggestions))]
         for name in self.MATCHERS:
             found = getattr(self, name)(ctx)
             if isinstance(found, Refusal):
-                return [Draft(line=line, text=ctx.label, problem=found.problem,
-                              assumptions=list(ctx.assumptions),
-                              suggestions=list(found.suggestions))]
+                return ctx, [Draft(line=line, text=ctx.label, problem=found.problem,
+                                   assumptions=list(ctx.assumptions),
+                                   suggestions=list(found.suggestions))]
             if found:
-                return [self.draft(ctx, *item) for item in found]
-        return [Draft(line=line, text=ctx.label, assumptions=list(ctx.assumptions),
-                      problem="I could not tell which rule this is",
-                      suggestions=hints(ctx.norm))]
+                return ctx, [self.draft(ctx, *item) for item in found]
+        return ctx, [Draft(line=line, text=ctx.label,
+                           assumptions=list(ctx.assumptions),
+                           problem="I could not tell which rule this is",
+                           suggestions=hints(ctx.norm))]
 
-    def context(self, line: int, statement: str) -> Statement:
+    FLOOR_READ = "was read as a floor one higher"
+    CEILING_READ = "was read as a ceiling one lower"
+    WINDOW_CUE = (rf"{PER_WEEK}|{PER_MONTH}|\bweekly\b|\bmonthly\b|\bfortnightly\b|"
+                  rf"\bdaily\b|\bper\s+\d+\s+days?\b|\bwindow\b|"
+                  rf"\b(?:weeks?|months?|fortnights?)\s+(?:{BOUND_CUE})\b|"
+                  rf"(?:per|a|each|every|in a|in any|in one|within a|within any)\s+"
+                  rf"(?:calendar\s+)?(?:day|shift|duty|24 hours)\b")
+    RUN_CUE = rf"\b{ADJ_RUN}\b|\b{RUN}\b"
+    SHIFT_HOURS = (rf"\bshifts?\b[^.]{{0,24}}?{N}\s*{HOUR_WORD}|"
+                   rf"{N}\s*{HOUR_WORD}[^.]{{0,16}}?\bper shift\b")
+    SHARED = 0.6
+    MOST_READINGS = 3
+
+    def _windows(self, ctx: Statement) -> list[str]:
+        """The stretches a bound could be counted over, when the words name none."""
+        if (re.search(self.WINDOW_CUE, ctx.pattern)
+                or re.search(self.RUN_CUE, ctx.pattern)
+                or ctx.dates.spans or not any_bound(ctx.pattern)):
+            return []
+        if re.search(self.SHIFT_HOURS, ctx.pattern):
+            return []
+        if re.search(rf"\b{HOUR_WORD}\b", ctx.pattern):
+            return ["week", "month"]
+        return ["month", "week"]
+
+    def _leans(self, ctx: Statement, draft: Draft) -> tuple[str, list[tuple[str, str]]]:
+        """The other honest readings of a statement, when it truly reads two ways."""
+        said = " ".join(draft.assumptions)
+        windows = self._windows(ctx)
+        if self.FLOOR_READ in said or self.CEILING_READ in said:
+            floor = self.FLOOR_READ in said
+            base = ("the number is the least required, one higher than the number said"
+                    if floor else
+                    "the number is the most allowed, one lower than the number said")
+            flip = ("the number is the most allowed" if floor
+                    else "the number is the least required")
+            if draft.ok:
+                return base, [("ceiling", flip)]
+            spread: list[tuple[str, str]] = []
+            for window in windows:
+                spread.append((window, f"{base}, {LEAN_MEANS[window]}"))
+                spread.append((f"ceiling {window}", f"{flip}, {LEAN_MEANS[window]}"))
+            return base, spread + [("ceiling", flip)]
+        if not draft.ok:
+            return "", [(window, LEAN_MEANS[window]) for window in windows]
+        if windows and ctx.shift and re.search(rf"\b{MOST}\b", ctx.pattern):
+            return LEAN_MEANS["month"], [("run", LEAN_MEANS["run"])]
+        return "", []
+
+    def _merge(self, ctx: Statement, line: int, statement: str, note: str,
+               drafts: list[Draft]) -> list[Draft]:
+        """A statement that reads two ways carries both, so the admin picks one."""
+        if len(drafts) != 1:
+            return drafts
+        primary = drafts[0]
+        means, leans = self._leans(ctx, primary)
+        if not leans:
+            return drafts
+        readings = [self._reading(primary, means)] if primary.ok else []
+        seen = {self._shape(primary.rule)} if primary.ok else set()
+        spare: list[Draft] = []
+        for lean, says in leans:
+            if len(readings) >= self.MOST_READINGS:
+                break
+            _, other = self._read(line, statement, note, lean)
+            if len(other) != 1 or not other[0].ok:
+                continue
+            shape = self._shape(other[0].rule)
+            if shape in seen:
+                continue
+            seen.add(shape)
+            spare.append(other[0])
+            readings.append(self._reading(other[0], says))
+        chosen = primary
+        if not primary.ok:
+            if not spare:
+                return drafts
+            chosen = spare[0]
+        if len(readings) < 2:
+            chosen.readings = []
+            return [chosen]
+        chosen.readings = readings
+        chosen.confidence = min(chosen.confidence, self.SHARED)
+        chosen.assumptions.append("this statement reads more than one way, so every "
+                                  "reading is offered and none was chosen for you")
+        return [chosen]
+
+    @classmethod
+    def _reading(cls, draft: Draft, means: str) -> dict:
+        """One reading as the page shows it: what it means and the rule it would be."""
+        return {"means": means or "as written", "rule": dict(draft.rule),
+                "confidence": min(draft.confidence, cls.SHARED),
+                "assumptions": list(draft.assumptions)}
+
+    @staticmethod
+    def _shape(rule: dict) -> str:
+        """Two readings that would build the same rule are one reading."""
+        return f"{rule['type']}|{sorted(rule['params'].items())}|{rule['scope']}"
+
+    def context(self, line: int, statement: str, lean: str = "") -> Statement:
         """Read severity, scope, shifts and dates off one statement."""
         norm = normalise(statement)
-        pattern, notes = rewrite_comparatives(norm)
+        for token in lean.split():
+            if token in LEAN_SUFFIX:
+                norm = f"{norm} {LEAN_SUFFIX[token]}"
+        pattern, notes = rewrite_comparatives(norm, lean)
         names = self.vocab.scan(norm)
         dates = scan_dates(pattern, self.horizon)
         severity, severity_note = severity_of(norm)
@@ -786,7 +1072,12 @@ class Parser:
                         severity=severity, weight=weight, explicit=bool(severity),
                         prohibited=bool(PROHIBITION.search(norm)))
         ctx.assumptions = list(notes) + list(dates.notes)
+        for token in lean.split():
+            if token in LEAN_NOTE:
+                ctx.assumptions.append(LEAN_NOTE[token])
         ctx.assumptions += [note for note in (severity_note, weight_note) if note]
+        ctx.spare = spare_text(pattern, names, dates)
+        ctx.numbers = stray_numbers(ctx.spare)
         if self.vocab.guessed:
             ctx.assumptions.append("no instance was sent, so shift names were "
                                    "guessed as M/E/N and nothing was checked "
@@ -907,12 +1198,20 @@ class Parser:
                            "add a longer shift type instead")
         return None
 
+    REST_CUE = (r"\b(?:rest|gap|breather|interval|clear hours?)\b|"
+                r"\bbetween\s+(?:\d+\s+)?(?:consecutive\s+|two\s+)?"
+                r"(?:shifts?|duties|duty)\b|"
+                r"\bafter (?:a|the|any|1) (?:shift|duty|night)\b|"
+                r"\bbefore (?:the |his |her |their )?next (?:shift|duty|turn)\b|"
+                r"\b(?:return|report|come back|be back|resume)\b[^.]{0,24}?"
+                r"\bwithin\s+\d|"
+                r"\bwithin\s+\d+(?:\.\d+)?\s*(?:hours?|hrs?)\s+of\b")
+
     def rest_hours(self, ctx: Statement):
-        if not re.search(r"\b(?:rest|gap|breather|interval)\b|"
-                         r"\bbetween (?:2 )?(?:shifts|duties)\b|"
-                         r"\bafter (?:a|the|any) (?:shift|duty|night)\b", ctx.pattern):
+        if not re.search(self.REST_CUE, ctx.pattern):
             return None
-        found = re.search(rf"{N}\s*{HOUR_WORD}", ctx.pattern)
+        found = re.search(rf"{N}\s*(?:(?:clear|full|whole|complete|continuous|"
+                          rf"unbroken|straight|solid)\s+)?{HOUR_WORD}", ctx.pattern)
         if not found:
             return None
         return [("min_rest_hours", {"hours": num(found.group(1))}, ())]
@@ -920,9 +1219,8 @@ class Parser:
     def hours_per_week(self, ctx: Statement):
         if not re.search(HOUR_WORD, ctx.pattern):
             return None
-        rolling = re.search(r"\brolling\b|\bany 7 (?:consecutive )?days\b|"
-                            r"\bany period of 7 days\b", ctx.pattern)
-        if not rolling and not re.search(rf"{PER_WEEK}|\bweekly\b", ctx.pattern):
+        rolling = re.search(ROLLING_WEEK, ctx.pattern)
+        if not rolling and not re.search(WEEK_SAID, ctx.pattern):
             return None
         got = bound_for(ctx.pattern, HOUR_WORD)
         if not got:
@@ -936,7 +1234,7 @@ class Parser:
     def hours_total(self, ctx: Statement):
         if not re.search(HOUR_WORD, ctx.pattern):
             return None
-        if not re.search(rf"{PER_MONTH}|\bin total\b|\baltogether\b|\bmonthly\b|"
+        if not re.search(rf"{MONTH_SAID}|\bin total\b|\baltogether\b|"
                          r"\bin all\b|\bover the (?:roster|whole|period)\b",
                          ctx.pattern):
             return None
@@ -969,20 +1267,31 @@ class Parser:
         if low is not None:
             out.append(("min_consecutive_days_off", {"min": int(low)}, ()))
         if not out and pairs:
-            out.append(("min_consecutive_days_off", {"min": 2},
-                        ("no number was given, so days off were taken to come in "
-                         "pairs",)))
+            plain = re.search(rf"{N}\s+{OFF_WORD}", ctx.pattern)
+            if plain:
+                out.append(("min_consecutive_days_off", {"min": int(num(plain.group(1)))},
+                            ("a bare number was read as the least number of days off "
+                             "in a row",)))
+            else:
+                out.append(("min_consecutive_days_off", {"min": 2},
+                            ("no number was given, so days off were taken to come in "
+                             "pairs",)))
         return out or None
+
+    BREAK_AFTER = (r"\b(?:break|rest|day off|days off|off day|offs?|holiday)\b"
+                   r"[^.]{0,24}?\bafter\b[^.]{0,16}?\d")
 
     def working_day_run(self, ctx: Statement):
         alone = re.search(r"\bisolated\b|\bstandalone\b|\bstray\b|\bone[- ]off\b|"
                           rf"\b1 (?:{DAY_WORD})\b", ctx.pattern)
-        if not re.search(rf"{RUN}|{ADJ_RUN}", ctx.pattern) and not alone:
+        if (not re.search(rf"{RUN}|{ADJ_RUN}", ctx.pattern) and not alone
+                and not re.search(self.BREAK_AFTER, ctx.pattern)):
             return None
         if not re.search(rf"\b{DAY_WORD}\b|\bstretch\b", ctx.pattern):
             return None
         if re.search(rf"\b\d+(?:\.\d+)?\s+{OFF_WORD}\b", ctx.pattern) and not re.search(
-                r"\bworking days?\b|\bwork days?\b|\bduty days?\b", ctx.pattern):
+                r"\bworking days?\b|\bwork days?\b|\bduty days?\b|"
+                r"\bdays? of (?:work|duty)\b", ctx.pattern):
             return None                  # the number counts days off, not days worked
         low, high = any_bound(ctx.pattern)
         out = []
@@ -990,7 +1299,7 @@ class Parser:
             out.append(("max_consecutive_working_days", {"max": int(high)}, ()))
         if low is not None:
             out.append(("min_consecutive_working_days", {"min": int(low)}, ()))
-        if not out and alone:
+        if not out and alone and not ctx.said_a_number:
             out.append(("min_consecutive_working_days", {"min": 2},
                         ("a lone working day was read as a run of at least 2 days",)))
         return out or None
@@ -1052,6 +1361,16 @@ class Parser:
             out.append(("headcount_per_shift", params, notes))
         return out or None
 
+    def _number_adrift(self, ctx: Statement, what: str, instead: str,
+                       suggestions: tuple[str, ...] = ()) -> Refusal:
+        """A number is stated but nothing says what it limits, so nothing is drafted."""
+        said = " and ".join(f"{n:g}" for n in ctx.numbers)
+        first = f"{ctx.numbers[0]:g}"
+        return Refusal(f"the statement names {said}, and nothing here says what that "
+                       f"number limits; I will not read it as {instead} while a number "
+                       f"is stated, so say it as 'at most {first} {what}' or "
+                       f"'at least {first} {what}'", suggestions)
+
     def nights(self, ctx: Statement):
         if not ctx.night:
             return None
@@ -1080,6 +1399,10 @@ class Parser:
                 return None
             if not re.search(rf"{SHIFT_WORD}|{self.NIGHT_WORD}", ctx.pattern):
                 return None
+            if ctx.said_a_number:
+                return self._number_adrift(
+                    ctx, f"{ctx.shift} shifts", f"a ban on the {ctx.shift} shift",
+                    ("shift_type_count_range", "max_consecutive_same_shift"))
             return [("shift_type_count_range", {"shift": ctx.shift, "max": 0},
                      (f"no number was given, so the {ctx.shift} shift was drafted as "
                       f"barred outright",))]
@@ -1092,7 +1415,7 @@ class Parser:
         return [("shift_type_count_range", params, ())]
 
     def days_off_per_week(self, ctx: Statement):
-        if not re.search(rf"{PER_WEEK}|\bweekly\b", ctx.pattern):
+        if not re.search(WEEK_SAID, ctx.pattern):
             return None
         if not re.search(rf"\b{OFF_WORD}\b", ctx.pattern):
             return None
@@ -1104,6 +1427,10 @@ class Parser:
             if plain:
                 low = num(plain.group(1))
                 notes = ("a bare number was read as the least number of days off",)
+            elif ctx.said_a_number:
+                return self._number_adrift(ctx, "days off a week",
+                                           "one day off a week",
+                                           ("min_days_off_per_window",))
             else:
                 low = 1
                 notes = ("no number was given, so one day off a week was drafted",)
@@ -1116,18 +1443,28 @@ class Parser:
 
     WORK_DAY = DAY_WORD + r"(?!\s+off)"
 
+    WHOLE_WEEK = (r"\ball 7 days\b|\bevery day\b|\bwhole week\b|\bfull week\b|"
+                  r"\bentire week\b|\ball days of the week\b|\b7 days a week\b|"
+                  r"\bseven days a week\b")
+
     def working_days_per_week(self, ctx: Statement):
-        rolling = re.search(r"\brolling\b|\bany 7 (?:consecutive )?days\b|"
-                            r"\bany period of 7 days\b", ctx.pattern)
-        if not rolling and not re.search(rf"{PER_WEEK}|\bweekly\b", ctx.pattern):
+        rolling = re.search(ROLLING_WEEK, ctx.pattern)
+        whole = re.search(self.WHOLE_WEEK, ctx.pattern)
+        if not rolling and not whole and not re.search(WEEK_SAID, ctx.pattern):
             return None
-        if ctx.prohibited and re.search(r"\ball 7 days\b|\bevery day\b|"
-                                        r"\bwhole week\b|\bfull week\b", ctx.pattern):
+        if ctx.prohibited and whole:
             return [("max_working_days_per_window",
                      {"max": 6, "window": "calendar"},
                      ("a ban on working the whole week was read as at most 6 working "
                       "days in a week",))]
         got = bound_for(ctx.pattern, self.WORK_DAY)
+        notes: tuple[str, ...] = ()
+        if not got and not ctx.shift and not re.search(
+                rf"\b{self.NIGHT_WORD}\b|\bweekends?\b", ctx.pattern):
+            got = bound_for(ctx.pattern, SHIFT_WORD)
+            if got:
+                notes = ("one duty a day in this model, so duties in a week were read "
+                         "as working days in a week",)
         if not got:
             return None
         low, high = got
@@ -1139,10 +1476,13 @@ class Parser:
         params = {"max": int(high), "window": "calendar"}
         if rolling:
             params.update({"window": "rolling", "window_days": 7})
-        return [("max_working_days_per_window", params, ())]
+        if low is not None:
+            notes += ("a floor on working days in a week is not a rule type, so only "
+                      "the ceiling was taken",)
+        return [("max_working_days_per_window", params, notes)]
 
     def duty_total(self, ctx: Statement):
-        if not re.search(rf"{PER_MONTH}|\bin total\b|\baltogether\b|\bmonthly\b|"
+        if not re.search(rf"{MONTH_SAID}|\bin total\b|\baltogether\b|"
                          r"\bin all\b|\bover the (?:roster|whole|period)\b",
                          ctx.pattern):
             return None
@@ -1158,19 +1498,32 @@ class Parser:
             params["max"] = int(high)
         return [("total_shifts_range", params, ())]
 
+    BOTH_DAYS = (r"\b(?:whole|complete|full|entire|both days of the)\s+weekends?\b|"
+                 r"\bboth weekend days\b|\bweekends? as a whole\b|"
+                 r"\bweekends?\b[^.]{0,30}?\b(?:whole|in full|entirely|both days|"
+                 r"not at all)\b")
+    SAT_SUN = r"\bsat(?:urday)?s?\b[^.]{0,40}?\bsun(?:day)?s?\b"
+    WORKED = r"\bwork\w*|\bduty\b|\bduties\b|\brostered\b|\bposted\b"
+    NOT_WORKED = r"\boff\b|\bleave\b|\baway\b|\babsent\b|\bunavailab\w+|\bholiday"
+
+    def _paired_weekend(self, ctx: Statement) -> bool:
+        """'Saturday means Sunday too' said without the word weekend."""
+        return bool(re.search(self.SAT_SUN, ctx.pattern) and not ctx.scope
+                    and re.search(self.WORKED, ctx.pattern)
+                    and not re.search(self.NOT_WORKED, ctx.pattern))
+
     def weekends(self, ctx: Statement):
         if "weekend" not in ctx.pattern:
-            return None
-        if re.search(r"\b(?:whole|complete|full|entire|both days of the)\s+weekends?"
-                     r"\b|\bboth weekend days\b|\bweekends? as a whole\b",
-                     ctx.pattern):
+            return [("complete_weekends", {}, ())] if self._paired_weekend(ctx) else None
+        if re.search(self.BOTH_DAYS, ctx.pattern):
             return [("complete_weekends", {}, ())]
         low, high = bound_for(ctx.pattern, r"weekends?") or (None, None)
         if high is not None:
             return [("max_weekends_worked", {"max": int(high)}, ())]
-        if ctx.prohibited and re.search(
-                r"\b(?:work|works|working|duty|duties|rostered|posted)\b",
-                ctx.pattern):
+        if ctx.prohibited and re.search(self.ON_DUTY, ctx.pattern):
+            if ctx.said_a_number:
+                return self._number_adrift(ctx, "weekends", "a ban on weekend duty",
+                                           ("max_weekends_worked",))
             return [("max_weekends_worked", {"max": 0},
                      ("no number was given, so weekend duty was drafted as banned "
                       "outright",))]
@@ -1180,10 +1533,15 @@ class Parser:
                            ("balance_workload", "max_weekends_worked"))
         return None
 
+    POST = r"(?:duty|duties|shifts?|posts?|positions?|slots?|vacanc\w+)"
+    UNFILLED = (r"\b(?:un)?(?:staffed|filled|manned|covered)\b|"
+                r"\b(?:vacant|empty|blank|short|shortfall|uncovered|open)\b")
+
     def coverage(self, ctx: Statement):
-        if re.search(r"\b(?:every|each|all|no|any) (?:duty|duties|shifts?|posts?|"
-                     r"positions?|slots?)\b.{0,40}?\b(?:staffed|filled|covered|"
-                     r"manned|vacant|empty|unfilled|short)\b|"
+        if re.search(rf"\b(?:every|each|all|no|any)\s+(?:\w+\s+){{0,2}}?{self.POST}\b"
+                     rf"[^.]{{0,40}}?(?:{self.UNFILLED})|"
+                     rf"\b(?:no|zero|nil|0)\s+(?:{self.UNFILLED})\s+(?:\w+\s+)?"
+                     rf"{self.POST}\b|"
                      r"\b(?:cover|coverage|staffing|demand|requirement)\b.{0,20}?"
                      r"\b(?:met|full|complete|maintained|satisfied)\b", ctx.pattern):
             return [("coverage", {"direction": "under"}, ())]
@@ -1220,6 +1578,11 @@ class Parser:
     WANTS = (r"\b(?:request\w*|asked for|asks for|wants?|would like|wish\w*|"
              r"applied for|prefer\w*|has put in)\b")
 
+    ON_DUTY = (r"\b(?:work|works|working|duty|duties|roster\w*|schedul\w*|"
+               r"assign\w*|post\w*|deploy\w*|deput\w*|detail\w*|allot\w*|"
+               r"engag\w*|utilis\w*|utiliz\w*|giv(?:e|en|ing)|put on|"
+               r"give duty)\b")
+
     def leave(self, ctx: Statement):
         if not ctx.dates.days or re.search(self.WANTS, ctx.pattern):
             return None
@@ -1227,9 +1590,7 @@ class Parser:
                          r"off duty|out of station|cannot come|maternity|sick|"
                          r"medical|hospital|training|deputation|exam|"
                          r"court|jury)\b", ctx.pattern)
-        barred = ctx.prohibited and re.search(
-            r"\b(?:work|works|working|duty|duties|rostered|scheduled|posted|"
-            r"assigned|put on)\b", ctx.pattern)
+        barred = ctx.prohibited and re.search(self.ON_DUTY, ctx.pattern)
         if not away and not barred:
             return None
         params = {"days": list(ctx.dates.days)}
@@ -1289,7 +1650,7 @@ class Parser:
     def out_of_scope(self, ctx: Statement):
         if re.search(rf"{N}\s*{HOUR_WORD}\b.{{0,24}}?\b(?:a|per|each|in a|in one)"
                      r"\s+day\b|\bdaily\s+(?:working\s+)?hours\b|\bhours per day\b",
-                     ctx.pattern):
+                     ctx.pattern) or re.search(self.SHIFT_HOURS, ctx.pattern):
             return Refusal("a daily hours limit is set by how long a shift is, since "
                            "nobody gets more than one shift a day; change the shift "
                            "length, or cap the week",

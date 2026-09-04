@@ -54,10 +54,10 @@ rules. A half-built month is held on the desk rather than sent anywhere, because
 engine cannot read one; from the first person onwards every change is put to
 `POST /validate` and kept only if the engine agrees. Once the month stands up it is
 generated: the duty register itself, dates across and staff down, with
-weekends shaded, nights in violet, each person's duties, hours, nights and
-weekends ruled off at the right edge, a head count under every day, and
-underneath it every rule the engine had to give ground on — grouped by rule, worst
-first, with the penalty each one cost.
+weekends shaded, every shift in a colour of its own and nights filled solid, each
+person's duties, hours, nights and weekends ruled off at the right edge, a head
+count under every day, and underneath it every rule the engine had to give ground
+on — grouped by rule, worst first, with the penalty each one cost.
 
 That register can be searched and questioned rather than only read. A name or a
 staff number narrows the sheet to whoever matches, a role narrows it to the people
@@ -72,31 +72,39 @@ a day that went understaffed — with a line in the margin saying in words how m
 duties and how many people were marked, and saying so plainly when the search has
 hidden them. A breach about the month as a whole admits that instead of pretending
 to point at a cell. Opening a name gives that person's month on its own slip: the
-roles they hold, their contract, their longest run, the shifts they worked, their
+roles they hold, how to reach them, their longest run, the shifts they worked, their
 thirty-one days in a strip, and every rule broken on their account.
 
-Step four is the questionnaire. The page asks `GET /schema` what the engine
-understands and builds the form from the answer, so a rule type added to the
-engine appears in the page without the page being touched: 25 kinds grouped into
-seven families, each with its plain-English help and a worked example, and a field
-per parameter drawn from its declared kind — a number box, a yes/no pair, a
-dropdown of shifts or roles, or a row of day chips with the weekends marked. The
-admin picks who a rule applies to (everyone, named people, a role, a contract),
-whether it is unbreakable or a preference, and how much a preference is worth. Every
-add, edit and removal is put to `POST /validate` before it is kept, so a rule the
-engine would refuse never enters the month; the refusal appears next to the field
-in the engine's own words, and the register of rules and the feasibility check on
-step five stay in step with each other.
-
-Rules can also be pasted in as the officials wrote them. The same step takes the
-circular a line at a time, sends it to `POST /parse` with the month, and lays the
-reading out as proposals: what each line was quoted as, what rule it would become
-in the admin's own terms, every assumption the reading made, and how sure it was.
-A proposal can be accepted as it stands, opened in the questionnaire and corrected
+Step four takes the rules in the officials' own words, and only that way. The admin
+writes or pastes the order a line at a time; the page sends it to `POST /parse` with
+the month and lays the reading out as proposals: what each line was quoted as, what
+rule it would become in the admin's own terms, every assumption the reading made,
+and how sure it was. A proposal can be accepted as it stands, opened and corrected
 first, or discarded; a line that could not be read says why and offers the nearest
-kinds to fill in by hand instead. Nothing reaches the register without being put to
-the engine, and the officials' own wording becomes the label the breach report will
-use, so what comes back reads like the circular rather than like a rule type.
+kinds instead. Nothing reaches the register without being put to `POST /validate`,
+and the officials' own wording becomes the label the breach report will use, so what
+comes back reads like the circular rather than like a rule type.
+
+Some sentences honestly say two things at once. "No more than 4 nights" can mean
+four nights in the month or four nights in a row, and both are proper rules; a
+number named after "more than" can be the floor the office means or the ceiling it
+means; a limit with no window said can be a week or a month. Where a line reads
+more than one way the page does not pick. It shows every reading side by side, each
+one saying in the engine's words what choosing it would mean, and the admin presses
+the one they meant — nothing is chosen for them. The plain accept button is withheld
+on such a line, and accepting the whole page at once steps over it rather than
+guessing, so a reading only reaches the register by being pressed. Once pressed it
+is an ordinary rule: correctable on the slip, and removable like any other.
+
+There is no form to fill in beside it. What the page offers instead is folded away
+under the box: every kind of rule the engine understands, grouped into families with
+its plain-English help and a sentence the parser is guaranteed to read, and a button
+that drops that sentence into the box to be edited. The list comes from
+`GET /schema`, so a rule type added to the engine shows up in the page without the
+page being touched — 25 kinds at present. The parameter-by-parameter slip is still
+there for correcting a reading: it opens on a proposal the engine read wrongly, or
+on a rule already kept, where a number or a shift the parser took the wrong way can
+be put right before the rule goes on the month.
 
 Nothing on the page is read-only any more. The month itself can be moved: step one
 takes a new first day and a new length, works out what that would mean before
@@ -111,9 +119,11 @@ for rest days, the new month is laid out to its own weekends, and where the dema
 is irregular each added day repeats the same weekday a week earlier. The page says
 which of the two it did.
 
-The roll is editable in the same spirit. A name, a staff number, the roles a person
-holds and their contract can all be corrected, people can be taken on or taken off,
-and the consequences are handled rather than left to the admin. Because every rule
+The roll is editable in the same spirit. A name, a staff number and the roles a
+person holds can all be corrected, a contact number and an email address can be kept
+beside them for the office's own use — the engine never reads either — people can be
+taken on or taken off, and the consequences are handled rather than left to the
+admin. Because every rule
 names a person by staff number, renaming one rewrites every rule that named them in
 the same breath, and the slip says how many rules that will be before the change is
 made. Removing somebody trims them out of the rules that still name other people
@@ -122,9 +132,9 @@ be undone, putting the person back where they stood on the roll with their rules
 restored. The roll can be emptied down to nobody — the month simply goes back to
 being held on the desk until somebody is on it again — while a staff number already
 taken, or one holding characters no rule could name, is refused on the page without
-troubling the engine. What the page suggests for the next person it reads off the
-roll itself: the office's own numbering carried on a step, and the contract most of
-the roll is already on, never an invented example.
+troubling the engine, as is a contact number too short to dial or an address with no
+`@` in it. What the page suggests for the next person it reads off the roll itself:
+the office's own numbering carried on a step, never an invented example.
 
 Roles and shifts are made on the page the same way, and can be taken off it. A role
 is a code and a printed name; a shift is a letter, a name, a clock, a length and
@@ -144,12 +154,24 @@ to `POST /validate` and is kept only if the engine agrees.
 Step three also answers the question an admin actually asks, which is about one
 person rather than the whole sheet. Any name or staff number brings up that person's
 month as a calendar — the weeks laid out under the weekday the month starts on, days
-outside the month hatched, rest days tinted, nights in violet — with each duty
+outside the month hatched, rest days tinted, each shift in its own colour and nights
+filled solid — with each duty
 giving its shift, its clock and the role it is worked as, and each day the rules
 already speak to marked on the day itself in the officials' own wording: on leave,
 day requested off, duty already fixed. Their duties, hours, nights, weekends and
 longest run are totalled above it. Before a roster exists the calendar still shows
 what the rules fix, so the month can be read before it is built.
+
+The page is laid out as a wall planner: a deep ink frame with the six steps pinned
+down the left as tabs, the current one joined to a white working sheet that holds the
+month. The colour code is the one thing the eye has to learn, and it is drawn from
+the office's own list rather than from the letters — the first shift the admin
+enters takes the first colour, the second the second, and every place a duty appears
+uses the same one, whether that is a cell in the duty register, a day on somebody's
+calendar, a square in their month strip or the key that names it. A shift that counts
+as a night is filled solid in its colour instead of tinted. Type is system-ui
+throughout, so no font is fetched, with tabular figures wherever numbers are meant to
+line up in a column.
 
 Still to come: CSV export and print styles.
 
@@ -170,7 +192,7 @@ The first command solves the built-in month and prints the roster grid, the
 per-person workload and the rule report. The second lists every rule type the
 engine understands. The third reads rules written as prose into draft rules, and
 takes them as arguments, from a file with `--file`, or on standard input. The
-fourth starts the API. The last runs the test suite — 396 tests, about a minute —
+fourth starts the API. The last runs the test suite — 422 tests, about a minute —
 and the `-t .` is required.
 
 With the server up, open <http://127.0.0.1:8000/> for the admin's page. It is three
@@ -192,15 +214,22 @@ It loads `app.js` with a stub document, points it at the server on port 8000
 (`PORT=…` for another), and drives the page's own functions rather than a copy of
 them. It builds a month from nothing the way an admin would: an empty desk that
 assumes nothing, a month opened on a chosen first day for a chosen length, three
-roles and three shifts, nine staff on the office's own numbering, the demand laid
-across working days and rest days, and two mandatory rules — then it has the real
+roles and three shifts, nine staff on the office's own numbering with a contact
+number and an address kept beside the first of them, the demand laid across working
+days and rest days, and two mandatory rules written as prose and read back through
+`POST /parse` — then it has the real
 engine judge the month, solve it, and confirms the roster covers exactly the dates
 asked for with no hard rule broken and nobody working more days in a row than the
 admin allowed. Along the way it checks that a half-built month is never sent
-anywhere, that an impossible span or an unusable figure is refused before it is
+anywhere, that an impossible span, an unusable figure or a contact number that could
+never be dialled is refused before it is
 sent, that a month the engine cannot read comes back refused in the engine's own
 words, that a role or shift something still holds cannot be removed, that starting
-a month over empties the desk and takes the old roster with it, and that one
+a month over empties the desk and takes the old roster with it, that every duty on
+the register carries the colour of its shift, that a line which reads two ways is
+offered as readings the admin presses — neither the plain accept button nor
+accepting the whole page will take one — and that the reading pressed is the one
+that reaches the register, and that one
 person's calendar reads off the roster the engine actually returned. It also
 asserts, start to finish, that no example data is ever fetched. It exits non-zero
 if any of that stops holding.
@@ -230,9 +259,25 @@ page they arrive as proposals on step four, and a ten-line circular put through 
 running server read eight lines, took them onto a 33-rule month and generated a
 legal roster from all 41.
 
-A rule that could never be satisfied is refused wherever it comes from — the
-questionnaire, prose, or a hand-written instance. Every parameter is held to the
-floor its own specification advertises, so a run of zero days or a negative rest
+The reader is meant to take the office's wording rather than the office learning
+the reader's. A limit may sit anywhere in the sentence — "at most 6 days in a row",
+"6 days in a row at most", "days in a row: 6 maximum", "6 is the ceiling" all set
+the same bound — and the words that set one are read widely: capped at, limited to,
+cap hours at 48, must not exceed, no higher than, up to, no fewer than, at the very
+least. A window can be a calendar week or a rolling one, however it is worded:
+"in any 7 days", "in any 7 day window", "in any window of 7 days", "in any 7-day
+period". Duties in a week are read as working days in a week, because a person
+works one duty a day in this model, and the reading says so. One sentence may carry
+two limits on different things — "at most 48 hours a week and 5 duties" — and the
+second half borrows the first half's limit word rather than being dropped. Two
+promises hold throughout: a sentence that names a number is never read as a total
+ban, and anything the reading could not keep is reported as an assumption instead of
+disappearing — a floor on working days in a week, for instance, is not a rule type,
+so the ceiling is taken and the floor is named as dropped.
+
+A rule that could never be satisfied is refused wherever it comes from — prose, a
+correction made on the page, or a hand-written instance. Every parameter is held to
+the floor its own specification advertises, so a run of zero days or a negative rest
 period is turned away, and any rule with a floor and a ceiling is refused when the
 floor sits above the ceiling: "min 20 is above max 4, so no roster can satisfy it".
 The alternative is worse than an error message, because a contradiction like that
@@ -243,8 +288,9 @@ they are left to the feasibility check and the violation report.
 
 ## The API
 
-`GET /health`, `/schema`, `/rules` and `/sample` are the read side: the schema
-and rule catalogue are what the questionnaire draws itself from, and `/sample`
+`GET /health`, `/schema`, `/rules` and `/sample` are the read side: the schema and
+rule catalogue are where the page gets the wordings it offers and the fields it uses
+to correct a reading, and `/sample`
 hands back a complete worked instance for the tests and the `demo` command. The
 admin's page never calls it — it starts from nothing. `POST /validate` says whether
 an instance is satisfiable before anybody

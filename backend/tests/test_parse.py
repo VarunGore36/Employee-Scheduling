@@ -73,9 +73,18 @@ class TestReadingTheWords(unittest.TestCase):
         for text, want in (("not more than 48 hrs a week", "at most 48 hrs a week"),
                            ("6 or fewer weekends", "at most 6 weekends"),
                            ("3 or more people", "at least 3 people"),
-                           ("keep staff to 3 weekends", "at most 3 weekends"),
-                           ("no employee may work more than 6 days", "at most 6 days")):
+                           ("keep staff to 3 weekends", "staff at most 3 weekends"),
+                           ("no employee may work more than 6 days",
+                            "employee may work at most 6 days"),
+                           ("no shift longer than 12 hours",
+                            "shift at most 12 hours")):
             self.assertEqual(rewrite_comparatives(normalise(text))[0], want, text)
+
+    def test_the_subject_a_negative_governs_is_kept_when_the_bound_is_rewritten(self):
+        problem = refused("No shift longer than 12 hours.")
+        self.assertIn("how long a shift is", problem)
+        self.assertEqual(read("No week higher than 48 hours."),
+                         ("hours_per_window", {"max_hours": 48}))
 
     def test_more_than_without_a_prohibition_is_read_as_a_floor_and_said_so(self):
         out, notes = rewrite_comparatives(normalise("everyone works more than 8 duties"))
@@ -89,6 +98,24 @@ class TestReadingTheWords(unittest.TestCase):
             bound_for("total working days in a month must be at least 12", "days"),
             (12, None))
         self.assertIsNone(bound_for("at least 12 hours of rest", "weekends"))
+
+    def test_a_limit_word_left_at_the_end_still_governs_its_number(self):
+        for text, want in (("days in a row: 6 at most", "days in a row: at most 6"),
+                           ("nights: 4 maximum", "nights: at most 4"),
+                           ("weekly hours: 48 max", "weekly hours: at most 48"),
+                           ("duties: 8 minimum", "duties: at least 8")):
+            self.assertEqual(rewrite_comparatives(normalise(text))[0], want, text)
+
+    def test_a_number_a_limit_word_governs_elsewhere_is_left_alone(self):
+        for text in ("shift 2 minimum 3 people", "between 4 and 6 nights maximum",
+                     "at most 6 days in a row"):
+            self.assertNotIn("at most 2", rewrite_comparatives(normalise(text))[0], text)
+            self.assertNotIn("at least 2", rewrite_comparatives(normalise(text))[0], text)
+
+    def test_the_subject_of_a_bound_is_what_the_bound_counts(self):
+        self.assertEqual(subject_of("at least 2 people on every night shift"), "people")
+        self.assertEqual(subject_of("at least 1 day off a week"), "days off")
+        self.assertEqual(subject_of("at most 4 nights in the month"), "nights")
 
 
 class TestHowBindingItIs(unittest.TestCase):
@@ -152,6 +179,24 @@ class TestWhoTheRuleCovers(unittest.TestCase):
         self.assertEqual(
             self.scope("Permanent staff must do at least 10 duties in the month."),
             {"kind": "contracts", "ids": ["permanent"]})
+
+    def test_the_office_words_for_a_contract_hand_reach_the_contract_type(self):
+        for text in ("Casual staff are capped at 12 shifts.",
+                     "Adhoc staff are capped at 12 shifts.",
+                     "Outsourced staff are capped at 12 shifts."):
+            self.assertEqual(self.scope(text),
+                             {"kind": "contracts", "ids": ["contract"]}, text)
+
+    def test_a_group_named_by_its_pay_is_refused_rather_than_guessed_at(self):
+        self.assertIn("pay is outside the roster",
+                      refused("Daily wage staff are capped at 12 shifts."))
+
+    def test_a_group_word_no_staff_record_carries_is_refused_not_widened(self):
+        only_permanent = replace(
+            INST, employees=[replace(one, contract="permanent") for one in INST.employees])
+        problem = refused("Casual staff are capped at 12 shifts.", only_permanent)
+        self.assertIn("no 'casual' group", problem)
+        self.assertIn("contract type", problem)
 
     def test_naming_nobody_means_everybody(self):
         self.assertEqual(self.scope("Nobody may work more than 6 days in a row."), {})
@@ -280,6 +325,31 @@ class TestLimitsOnOnePerson(unittest.TestCase):
                          ("max_working_days_per_window",
                           {"max": 6, "window": "calendar"}))
 
+    def test_duties_in_a_week_are_working_days_in_a_week_and_say_so(self):
+        draft = only("No more than 5 duties a week.")
+        self.assertEqual((draft.rule["type"], draft.rule["params"]),
+                         ("max_working_days_per_window",
+                          {"max": 5, "window": "calendar"}))
+        self.assertTrue(any("one duty a day" in note for note in draft.assumptions),
+                        draft.assumptions)
+        self.assertEqual(read("Up to 5 shifts a week.")[1],
+                         {"max": 5, "window": "calendar"})
+
+    def test_a_floor_beside_the_ceiling_on_a_week_keeps_the_ceiling_and_says_so(self):
+        draft = only("Between 4 and 6 duties a week.")
+        self.assertEqual(draft.rule["params"], {"max": 6, "window": "calendar"})
+        self.assertTrue(any("only the ceiling was taken" in note
+                            for note in draft.assumptions), draft.assumptions)
+
+    def test_the_ceiling_reads_however_the_office_words_it(self):
+        for text in ("No higher than 48 hours a week.",
+                     "Not greater than 48 hours a week.",
+                     "Weekly hours are not to go beyond 48.",
+                     "Nobody above 48 hours a week.",
+                     "Cap weekly hours at 48.",
+                     "Weekly hours: 48 max."):
+            self.assertEqual(read(text), ("hours_per_window", {"max_hours": 48}), text)
+
     def test_a_ban_on_the_whole_week_becomes_six_days_and_says_so(self):
         draft = only("No employee shall work all seven days of a week.")
         self.assertEqual((draft.rule["type"], draft.rule["params"]),
@@ -293,6 +363,18 @@ class TestLimitsOnOnePerson(unittest.TestCase):
         self.assertEqual(read("Maximum 48 hrs in any 7 days."),
                          ("hours_per_window",
                           {"max_hours": 48, "window": "rolling", "window_days": 7}))
+
+    def test_a_rolling_week_reads_however_the_office_words_the_window(self):
+        rolling = {"max_hours": 48, "window": "rolling", "window_days": 7}
+        for text in ("No one may work more than 48 hours in any 7 day window.",
+                     "Cap hours at 48 in any 7-day period.",
+                     "Not more than 48 hours in any window of 7 days.",
+                     "At most 48 hours within any 7 days.",
+                     "48 hours is the ceiling in any 7 day stretch."):
+            self.assertEqual(read(text), ("hours_per_window", rolling), text)
+        self.assertEqual(read("Maximum 5 duties in any window of 7 days."),
+                         ("max_working_days_per_window",
+                          {"max": 5, "window": "rolling", "window_days": 7}))
 
     def test_a_floor_on_hours_for_one_role(self):
         draft = only("MTS staff should get at least 45 hours a week.")
@@ -425,6 +507,22 @@ class TestTwoLimitsInOneSentence(unittest.TestCase):
         self.assertEqual([d.rule["type"] for d in found],
                          ["max_consecutive_working_days", "min_days_off_per_window",
                           "hours_per_window"])
+
+    def test_a_second_limit_may_borrow_the_first_ones_words(self):
+        found = parse("Max 4 nights and 2 weekends in the month.", INST)
+        self.assertEqual([(d.rule["type"], d.rule["params"]) for d in found],
+                         [("max_night_shifts", {"max": 4}),
+                          ("max_weekends_worked", {"max": 2})])
+        self.assertEqual([d.rule["type"] for d in
+                          parse("At most 48 hours a week and 5 duties a week.", INST)],
+                         ["hours_per_window", "max_working_days_per_window"])
+
+    def test_a_limit_on_the_shift_and_a_limit_on_the_person_come_apart(self):
+        found = parse("Every night shift needs at least 2 people on site, and no one "
+                      "does more than 4 nights in the month.", INST)
+        self.assertEqual([(d.rule["type"], d.rule["params"]) for d in found],
+                         [("headcount_per_shift", {"shift": "N", "min": 2}),
+                          ("max_night_shifts", {"max": 4})])
 
     def test_a_range_over_one_subject_stays_whole(self):
         self.assertEqual(read("Between 8 and 22 duties in the month."),
@@ -590,6 +688,99 @@ class TestThePayloadTheServiceReturns(unittest.TestCase):
         self.assertFalse(without["counts"]["checked_against_instance"])
         with_inst = parse_payload("Nobody may work more than 6 days in a row.", INST)
         self.assertTrue(with_inst["counts"]["checked_against_instance"])
+
+
+class TestAStatementThatReadsMoreThanOneWay(unittest.TestCase):
+    """Where the words are open, every reading is offered and none is chosen."""
+
+    def test_a_ceiling_on_a_named_shift_with_no_stretch_reads_two_ways(self):
+        draft = only("No more than 4 nights.")
+        self.assertTrue(draft.ok)
+        self.assertEqual([one["rule"]["type"] for one in draft.readings],
+                         ["max_night_shifts", "max_consecutive_same_shift"])
+        self.assertEqual([one["rule"]["params"] for one in draft.readings],
+                         [{"max": 4}, {"max": 4, "shift": "N"}])
+
+    def test_the_reading_the_draft_carries_is_the_first_one_offered(self):
+        draft = only("No more than 4 nights.")
+        self.assertEqual(draft.readings[0]["rule"], draft.rule)
+
+    def test_every_reading_says_in_words_what_it_would_mean(self):
+        for text in ("No more than 4 nights.", "Max 48 hours.",
+                     "Everyone must work more than 12 duties."):
+            for one in only(text).readings:
+                self.assertTrue(one["means"].strip(), text)
+                self.assertIn(one["rule"]["type"], REGISTRY, text)
+
+    def test_a_stretch_in_the_words_leaves_one_reading_only(self):
+        for text in ("No more than 3 nights in a row.",
+                     "Nobody does more than 4 nights in the month.",
+                     "No one works more than 48 hours a week.",
+                     "Nobody may work more than 8 hours a day.",
+                     "At least 11 hours off between two shifts."):
+            self.assertEqual(only(text).readings, [], text)
+
+    def test_more_than_with_nothing_forbidden_offers_the_floor_and_the_ceiling(self):
+        draft = only("Everyone must work more than 12 duties.")
+        self.assertEqual([one["rule"]["params"] for one in draft.readings][:2],
+                         [{"min": 13}, {"max": 12}])
+        self.assertEqual([one["rule"]["type"] for one in draft.readings],
+                         ["total_shifts_range", "total_shifts_range",
+                          "max_working_days_per_window"])
+
+    def test_hours_with_no_stretch_offer_the_week_before_the_whole_period(self):
+        draft = only("Max 48 hours.")
+        self.assertEqual([one["rule"]["type"] for one in draft.readings],
+                         ["hours_per_window", "total_hours_range"])
+
+    def test_one_reading_is_no_choice_at_all_and_is_taken_as_the_draft(self):
+        draft = only("Minimum 12 duties.")
+        self.assertEqual((draft.rule["type"], draft.rule["params"]),
+                         ("total_shifts_range", {"min": 12}))
+        self.assertEqual(draft.readings, [])
+        self.assertTrue(any("did not say over what stretch" in note
+                            for note in draft.assumptions), draft.assumptions)
+
+    def test_readings_are_never_the_same_rule_twice_and_never_crowd_the_page(self):
+        for text in ("No more than 4 nights.", "Max 48 hours.", "Minimum 12 duties.",
+                     "Everyone must work more than 12 duties.",
+                     "Cap the evening shift at 5."):
+            shapes = [(one["rule"]["type"], sorted(one["rule"]["params"].items()))
+                      for one in only(text).readings]
+            self.assertEqual(len(shapes), len(set(map(str, shapes))), text)
+            self.assertLessEqual(len(shapes), Parser.MOST_READINGS, text)
+
+    def test_a_shared_reading_is_never_reported_as_near_certain(self):
+        for text in ("No more than 4 nights.", "Max 48 hours."):
+            draft = only(text)
+            self.assertLessEqual(draft.confidence, Parser.SHARED, text)
+            for one in draft.readings:
+                self.assertLessEqual(one["confidence"], Parser.SHARED, text)
+                self.assertGreaterEqual(one["confidence"], 0.25, text)
+
+    def test_the_choice_is_said_out_loud_in_the_assumptions(self):
+        draft = only("No more than 4 nights.")
+        self.assertTrue(any("reads more than one way" in note
+                            for note in draft.assumptions), draft.assumptions)
+
+    def test_the_readings_reach_the_payload_and_survive_json(self):
+        out = parse_payload("No more than 4 nights.", INST)
+        again = json.loads(json.dumps(out))
+        self.assertEqual(len(again["drafts"][0]["readings"]), 2)
+        self.assertEqual(again["drafts"][0]["readings"][0]["rule"],
+                         again["drafts"][0]["rule"])
+
+    def test_only_the_reading_the_draft_carries_is_offered_as_a_rule(self):
+        out = parse_payload("No more than 4 nights.", INST)
+        self.assertEqual(len(out["rules"]), 1)
+        self.assertEqual(out["rules"][0]["type"], "max_night_shifts")
+
+    def test_every_reading_builds_under_a_fresh_ruleset(self):
+        for text in ("No more than 4 nights.", "Max 48 hours.",
+                     "Everyone must work more than 12 duties."):
+            for one in only(text).readings:
+                rules = [Rule.from_dict(one["rule"])]
+                RuleSet(replace(INST, rules=rules))
 
 
 class TestEveryDraftIsARuleTheEngineAccepts(unittest.TestCase):

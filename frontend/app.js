@@ -7,7 +7,7 @@ const base = location.protocol.startsWith("http") ? "" : "http://127.0.0.1:8000"
 const token = new URLSearchParams(location.search).get("token") || "";
 const state = { instance: null, health: null, check: null, solved: null,
                 schema: null, draft: null, dropped: null, dirty: false,
-                memo: false, memoText: "", read: null, readError: "",
+                memoText: "", read: null, readError: "",
                 seconds: 30, seed: 0, busy: false, step: "period",
                 view: { find: "", role: "", only: false }, lit: "", who: "",
                 edit: null, gone: null, staffFind: "", pick: "", pickFind: "" };
@@ -385,7 +385,6 @@ function startMonth() {
   state.dirty = false;
   state.edit = null;
   state.gone = null;
-  state.memo = false;
   state.memoText = "";
   state.read = null;
   state.readError = "";
@@ -477,24 +476,17 @@ function nextStaffId(inst) {
   return stem + String(next).padStart(width, "0");
 }
 
-function usualContract(inst) {
-  const count = {};
-  inst.employees.forEach(person => {
-    if (person.contract) count[person.contract] = (count[person.contract] || 0) + 1;
-  });
-  return Object.keys(count).sort((a, b) => count[b] - count[a])[0] || "";
-}
-
 function personEdit(person) {
   const inst = state.instance;
   const first = inst.employees.length === 0;
+  const held = (person && person.attributes) || {};
   return { kind: "person",
            was: person ? person.id : "",
            id: person ? person.id : (first ? "" : nextStaffId(inst)),
            name: person ? person.name || "" : "",
            roles: person ? person.roles.slice() : [],
-           contract: person ? person.contract || ""
-                            : (first ? "" : usualContract(inst)),
+           phone: held.phone || "",
+           email: held.email || "",
            error: "" };
 }
 
@@ -508,8 +500,8 @@ function personSlip() {
     '<p class="note"><b>A staff number is how every rule names a person.</b> ' +
     "Change it and the rules that name them are rewritten to match, so nothing is " +
     "left pointing at somebody who is no longer on the roll. The roles decide which " +
-    "duties this person can be given, and the contract is what a rule scoped to a " +
-    "kind of employment will look for.</p>" +
+    "duties this person can be given. A number to reach them on and an address are " +
+    "the office's own record — the engine never reads them.</p>" +
     (edit.error ? '<p class="warn">' + esc(edit.error) + "</p>" : "") +
     fieldRow("Staff number", true,
       textField("Staff number", "edit", edit.id,
@@ -519,10 +511,11 @@ function personSlip() {
       textField("Name", "edit", edit.name, "as it should read on the roster", "name")) +
     fieldRow("Roles held", true, picksOf("Roles held", "roles", edit.roles,
       inst.roles.map(role => [role.id, role.id, false, role.name]), "hold")) +
-    fieldRow("Contract", false, listField("Contract", "edit", "contract",
-      edit.contract, contracts(inst),
-      contracts(inst).length ? contracts(inst)[0]
-                             : "as the order describes it")) +
+    fieldRow("Contact number", false,
+      textField("Contact number", "edit", edit.phone, "if the office holds one",
+                "phone")) +
+    fieldRow("Email", false,
+      textField("Email", "edit", edit.email, "if the office holds one", "email")) +
     (renaming && tied.length ? '<p class="note">' + tied.length + " rule" +
       (tied.length === 1 ? " names " : "s name ") + esc(edit.was) +
       " and will be rewritten to " + esc(edit.id) + ": " +
@@ -532,13 +525,18 @@ function personSlip() {
     press("Cancel", "cancel-edit", true, state.busy) + "</div></div>";
 }
 
+function reachAt(person) {
+  const held = (person && person.attributes) || {};
+  return [held.phone || "", held.email || ""].filter(one => one);
+}
+
 function personRow(person) {
   const open = Boolean(state.edit) && state.edit.kind === "person" &&
                state.edit.was === person.id;
   return '<li data-on="' + open + '"><p><span class="chip">' + esc(person.id) +
     "</span></p><p>" + esc(person.name || person.id) + '<span class="says">' +
-    esc((person.roles.join(", ") || "no role") +
-        (person.contract ? " · " + person.contract : "")) + "</span></p>" +
+    esc([person.roles.join(", ") || "no role"].concat(reachAt(person)).join(" · ")) +
+    "</span></p>" +
     '<p class="doing">' + press("Edit", "edit-person", true, state.busy, person.id) +
     press("Remove", "drop-person", true, state.busy, person.id) + "</p></li>";
 }
@@ -805,7 +803,6 @@ function ruleReaches(rule, person) {
   if (scope.kind === "roles") {
     return (scope.ids || []).some(role => person.roles.indexOf(role) >= 0);
   }
-  if (scope.kind === "contracts") return (scope.ids || []).indexOf(person.contract) >= 0;
   return false;
 }
 
@@ -860,6 +857,21 @@ function shiftsBy(inst) {
   return byId;
 }
 
+function slots(inst) {
+  const at = {};
+  inst.shifts.forEach((shift, index) => { at[shift.id] = index % 6; });
+  return at;
+}
+
+function swatches(inst) {
+  if (!inst.shifts.length) return "";
+  const at = slots(inst);
+  return inst.shifts.map(shift =>
+    '<span class="swatch" data-slot="' + at[shift.id] + '" data-night="' +
+    Boolean(shift.counts_as_night) + '"><b>' + esc(shift.id) + "</b>" +
+    esc(shift.name || shift.id) + "</span>").join("");
+}
+
 function monthCell(index, look) {
   if (index === null) return '<td class="pad"></td>';
   const iso = addDays(look.span.start, index);
@@ -873,7 +885,10 @@ function monthCell(index, look) {
   if (!cell && !noted.length) said.push(look.duties ? "no duty" : "nothing fixed yet");
   return '<td class="' + (look.resting(iso) ? "rest" : "") + (cell ? " on" : "") +
     (shift && shift.counts_as_night ? " night" : "") +
-    (noted.length ? " noted" : "") + '" title="' + esc(said.join(" · ")) + '">' +
+    (noted.length ? " noted" : "") + '"' +
+    (cell && look.slot[cell.shift] !== undefined
+      ? ' data-slot="' + look.slot[cell.shift] + '"' : "") +
+    ' title="' + esc(said.join(" · ")) + '">' +
     "<i>" + isoDate(iso).getDate() + "</i>" +
     (cell ? "<b>" + esc(cell.shift) + "</b><span>" +
       esc(clock(shift.start_min) + "–" + clock(shift.start_min + shift.duration_min)) +
@@ -887,7 +902,7 @@ function personMonth(inst) {
   if (!person) return "";
   const look = { span: inst.horizon, duties: dutiesFor(person.id),
                  marks: marksFor(inst, person), shifts: shiftsBy(inst),
-                 resting: restDays(inst) };
+                 slot: slots(inst), resting: restDays(inst) };
   const weekend = inst.horizon.weekend_days || [];
   const load = state.solved
     ? (state.solved.workload.filter(one => one.employee === person.id)[0] || null)
@@ -895,7 +910,8 @@ function personMonth(inst) {
   return '<div class="slip who"><h4>' + esc(person.id) + " · " +
     esc(person.name || person.id) + "</h4>" +
     '<p class="note">Holds <b>' + esc(person.roles.join(", ") || "no role") +
-    "</b>" + (person.contract ? " · " + esc(person.contract) : "") + " · " +
+    "</b>" + (reachAt(person).length ? " · " + esc(reachAt(person).join(" · ")) : "") +
+    " · " +
     esc(longDate(inst.horizon.start)) + " to " +
     esc(longDate(addDays(inst.horizon.start, inst.horizon.num_days - 1))) + "</p>" +
     (load ? tally([["duties", num(load.duties || 0)],
@@ -913,9 +929,10 @@ function personMonth(inst) {
     monthWeeks(inst.horizon).map(week => "<tr>" + week.map(index =>
       monthCell(index, look)).join("") + "</tr>").join("") +
     "</tbody></table></div>" +
-    '<p class="key">Days outside the month are hatched. Rest days are tinted, ' +
-    "nights are violet, and anything the rules already say about a day is printed " +
-    "on it in red.</p>" +
+    '<p class="key"><span class="code">' + swatches(inst) + "</span>" +
+    "days outside the month are hatched · the weekly rest is tinted · " +
+    "nights are filled solid · anything the rules already say about a day is " +
+    "printed on it in red</p>" +
     '<div class="doing">' + press("Close", "pick", true, state.busy, person.id) +
     "</div></div>";
 }
@@ -1156,6 +1173,7 @@ function grid(out) {
   const resting = restDays(inst);
   const shifts = {};
   inst.shifts.forEach(shift => { shifts[shift.id] = shift; });
+  const slot = slots(inst);
   const load = {};
   out.workload.forEach(person => { load[person.employee] = person; });
   const dates = out.roster.dates;
@@ -1190,6 +1208,8 @@ function grid(out) {
         ? (shifts[cell.shift] || {}).name + " · " + cell.role
         : "off duty") + " · " + longDate(iso));
       return '<td class="' + mark.join(" ") + '" data-day="' + index +
+        (cell && slot[cell.shift] !== undefined
+          ? '" data-slot="' + slot[cell.shift] : "") +
         '" data-say="' + said + '" title="' + said + '">' +
         (cell ? esc(cell.shift) : "·") + "</td>";
     }).join("");
@@ -1225,8 +1245,8 @@ function grid(out) {
     '<th scope="row">on duty</th>' + feet +
     '<td class="sum" colspan="4">' + onDuty.reduce((a, b) => a + b, 0) +
     "</td></tr></tfoot></table></div>" +
-    '<p class="key">M morning · E evening · <span class="night">N night</span> · ' +
-    "· off duty · shaded columns are weekends and holidays · " +
+    '<p class="key"><span class="code">' + swatches(inst) + "</span>" +
+    "· is off duty · tinted columns are the weekly rest · " +
     "d duties, h hours, n nights, w weekends worked · " +
     "the head count under each day is for the whole month, not the filtered sheet · " +
     "point at a duty to read it in the margin, or open a name for that person's " +
@@ -1276,14 +1296,6 @@ function dates(inst) {
     all.push(addDays(inst.horizon.start, day));
   }
   return all;
-}
-
-function contracts(inst) {
-  const seen = {};
-  inst.employees.forEach(person => {
-    if (person.contract) seen[person.contract] = true;
-  });
-  return Object.keys(seen).sort();
 }
 
 function scopeWords(scope) {
@@ -1455,8 +1467,7 @@ function paramField(param) {
 }
 
 const SCOPES = [["all", "everyone"], ["employees", "named people"],
-                ["roles", "everyone holding a role"],
-                ["contracts", "a kind of contract"]];
+                ["roles", "everyone holding a role"]];
 
 function scopeChoices(inst, kind) {
   if (kind === "employees") {
@@ -1466,7 +1477,6 @@ function scopeChoices(inst, kind) {
   if (kind === "roles") {
     return inst.roles.map(role => [role.id, role.id + " · " + (role.name || role.id)]);
   }
-  if (kind === "contracts") return contracts(inst).map(name => [name, name]);
   return [];
 }
 
@@ -1484,7 +1494,10 @@ function slip() {
   const card = typeCard(draft.type);
   const ids = scopeChoices(inst, draft.scope.kind);
   return '<div class="slip"><h3>' +
-    (draft.editing ? "Edit this rule" : "Add a rule") + "</h3>" +
+    (draft.editing ? "Edit this rule" : "Set this line out by hand") + "</h3>" +
+    (draft.editing ? "" : '<p class="note">The words stay yours — this is only ' +
+      "the reading of them, so that a number or a shift the engine took wrongly " +
+      "can be put right before the rule is kept.</p>") +
     (card ? '<p class="note"><b>' + esc(card.help) + "</b> " +
             esc(card.example) + "</p>" : "") +
     (draft.error ? '<p class="warn">' + esc(draft.error) + "</p>" : "") +
@@ -1584,16 +1597,21 @@ function entries(rules) {
 }
 
 const MEMO_HINT = "Nobody may work more than 6 days in a row.\n" +
-  "Staff 07 is on leave from 15 to 19 September.\n" +
+  "There must be at least 11 hours between duties.\n" +
   "Every night shift needs at least two people on site.\n" +
-  "LSG staff should not do more than 8 nights in the month.";
+  "Nobody should work more than 8 nights in the month.";
 
 function certainty(value) {
   return Math.round((Number(value) || 0) * 100) + "% sure";
 }
 
 function drafted() {
-  return state.read ? state.read.drafts.filter(one => one.rule) : [];
+  return state.read
+    ? state.read.drafts.filter(one => one.rule && !choosing(one)) : [];
+}
+
+function choosing(draft) {
+  return (draft.readings || []).length > 1;
 }
 
 function proposalOn(line) {
@@ -1617,13 +1635,25 @@ function becomes(rule, confidence) {
     words.filter(word => word).join(" · ");
 }
 
+function reading(draft, at) {
+  const one = draft.readings[at];
+  return "<li><p>" + esc(one.means) + '<span class="became">' +
+    esc(becomes(one.rule, one.confidence)) + "</span></p>" +
+    '<p class="doing">' +
+    press("This is the one", "take-reading", false, state.busy,
+          draft.line + ":" + at) + "</p></li>";
+}
+
 function proposal(draft) {
   const rule = draft.rule;
+  const pick = choosing(draft);
   const open = Boolean(state.draft) && state.draft.fromLine === draft.line;
   return '<li data-on="' + open + '"><p class="no">' + esc(draft.line) +
     '</p><p><span class="said">' + esc(draft.text) + "</span>" +
-    (rule ? '<span class="became">' + esc(becomes(rule, draft.confidence)) +
+    (rule && !pick ? '<span class="became">' + esc(becomes(rule, draft.confidence)) +
             "</span>" : "") +
+    (pick ? '<span class="pick">This line reads ' + esc(draft.readings.length) +
+            " ways. Press the one you meant — nothing is chosen for you.</span>" : "") +
     (draft.problem ? '<span class="why">' + esc(draft.problem) + "</span>" : "") +
     (draft.assumptions || []).map(took =>
       '<span class="took">' + esc(took) + "</span>").join("") +
@@ -1631,37 +1661,61 @@ function proposal(draft) {
       ? '<span class="became">nearest kinds — ' +
         esc(nearest(draft.suggestions)) + "</span>" : "") +
     '</p><p class="doing">' +
-    (rule ? press("Accept", "take-draft", false, state.busy, String(draft.line)) : "") +
+    (rule && !pick
+      ? press("Accept", "take-draft", false, state.busy, String(draft.line)) : "") +
     press(rule ? "Edit first" : "Write it by hand", "open-draft", true,
           state.busy || !state.schema, String(draft.line)) +
     press("Discard", "skip-draft", true, state.busy, String(draft.line)) +
-    "</p></li>";
+    "</p>" +
+    (pick ? '<ul class="reads">' +
+      draft.readings.map((one, at) => reading(draft, at)).join("") + "</ul>" : "") +
+    "</li>";
+}
+
+function wordings() {
+  const shown = families();
+  if (!shown.length) return "";
+  return '<details class="wordings"><summary>Wordings the engine understands — ' +
+    ((state.schema && state.schema.rule_type_count) || 0) + " kinds of rule" +
+    "</summary>" +
+    '<p class="note">Write your own words. These are only here to show the shape ' +
+    "of what can be said; take one and change the numbers, the shifts, the roles " +
+    "or the names to suit the order you are working from.</p>" +
+    shown.map(family => '<div class="family"><h4>' + esc(family[0]) + "</h4><ul>" +
+      family[1].map(card => "<li><p>" + esc(card.label) + '<span class="said">' +
+        esc(card.example || "") + "</span></p>" +
+        (card.example
+          ? '<p class="doing">' + press("Use this wording", "take-words", true,
+              state.busy, card.type) + "</p>" : "") +
+        "</li>").join("") + "</ul></div>").join("") + "</details>";
 }
 
 function memoPanel() {
   const read = state.read;
-  return '<div class="slip memo"><h3>Rules as the officials wrote them</h3>' +
-    '<p class="note"><b>Paste the circular, one rule to a line.</b> Each line is ' +
-    "read into a proposal you can accept, correct or discard. Nothing reaches the " +
-    "register until you say so, and the wording is kept as the report's own." +
-    "</p>" +
+  return '<div class="slip memo"><h3>Rules, in the officials\' own words</h3>' +
+    '<p class="note"><b>Write or paste the order, one rule to a line.</b> Each line ' +
+    "is read into a proposal you can accept, correct or discard. Nothing reaches the " +
+    "register until you say so, and your wording is kept as the label the breach " +
+    "report will use.</p>" +
     (state.readError ? '<p class="warn">' + esc(state.readError) + "</p>" : "") +
     '<div class="field"><span>The wording<i> as written</i></span>' +
-    '<textarea data-set="memo" rows="6" aria-label="The rules as the officials ' +
-    'wrote them" placeholder="' + esc(MEMO_HINT) + '">' + esc(state.memoText) +
+    '<textarea data-set="memo" rows="8" aria-label="The rules in the officials\' ' +
+    'own words" placeholder="' + esc(MEMO_HINT) + '">' + esc(state.memoText) +
     "</textarea></div>" +
     '<div class="doing">' +
-    press("Read these", "read-memo", false, state.busy) +
+    press("Read these", "read-memo", false, state.busy || !state.schema) +
     (drafted().length > 1
-      ? press("Accept all " + drafted().length, "take-all", true, state.busy) : "") +
-    press("Close", "memo", true, state.busy) + "</div>" +
+      ? press("Accept all " + drafted().length, "take-all", false, state.busy) : "") +
+    (state.memoText.trim() ? press("Empty the box", "clear-memo", true, state.busy)
+                           : "") + "</div>" +
     (read ? tally([["statements read", read.counts.statements],
                    ["became proposals", read.counts.drafted],
                    ["could not be read", read.counts.unparsed]]) : "") +
     (read && !read.drafts.length
       ? '<p class="key">Every proposal has been dealt with.</p>' : "") +
     (read && read.drafts.length
-      ? '<ul class="props">' + read.drafts.map(proposal).join("") + "</ul>" : "");
+      ? '<ul class="props">' + read.drafts.map(proposal).join("") + "</ul>" : "") +
+    wordings() + "</div>";
 }
 
 function rulesPanel() {
@@ -1678,14 +1732,10 @@ function rulesPanel() {
                  (state.schema && state.schema.rule_type_count) || "—"]]) +
     (state.schema ? "" : '<p class="warn">The rule catalogue could not be read ' +
       "from the engine, so nothing can be added until it answers again.</p>") +
-    (state.draft ? slip() : '<div class="doing">' +
-      press("Add a rule", "add-rule", false, state.busy || !state.schema) +
-      press(state.memo ? "Close the memo" : "Paste rules as prose", "memo", true,
-            state.busy) +
-      (state.dropped
-        ? press("Put back: " + state.dropped.label, "undrop", true, state.busy)
-        : "") + "</div>") +
-    (state.memo ? memoPanel() : "") +
+    (state.dropped ? '<div class="doing">' +
+      press("Put back: " + state.dropped.label, "undrop", true, state.busy) +
+      "</div>" : "") +
+    (state.draft ? slip() : "") + memoPanel() +
     entries(inst.rules);
 }
 
@@ -1789,6 +1839,7 @@ function personCard(out) {
   const resting = restDays(inst);
   const shifts = {};
   inst.shifts.forEach(shift => { shifts[shift.id] = shift; });
+  const slot = slots(inst);
   const lit = litDuties(out);
   const held = lit.cells[id] || {};
   const all = lit.rows[id] === true;
@@ -1797,7 +1848,9 @@ function personCard(out) {
     const shift = cell ? (shifts[cell.shift] || {}) : null;
     return '<span data-shift="' + (shift && shift.counts_as_night ? "N" : "") +
       '" data-rest="' + resting(iso) + '" data-lit="' +
-      (held[index] === true || (all && Boolean(cell))) + '" title="' +
+      (held[index] === true || (all && Boolean(cell))) + '"' +
+      (cell && slot[cell.shift] !== undefined
+        ? ' data-slot="' + slot[cell.shift] + '"' : "") + ' title="' +
       esc(longDate(iso) + (cell ? " · " + shift.name + " · " + cell.role
         : " · off duty")) + '"><i>' + isoDate(iso).getDate() + "</i>" +
       (cell ? esc(cell.shift) : "·") + "</span>";
@@ -1808,7 +1861,8 @@ function personCard(out) {
   return '<div class="slip card"><h3>' + esc(id + " · " + (stats.name || "")) +
     "</h3>" + '<p class="note">Holds <b>' +
     esc((stats.roles || []).join(", ") || "no role") + "</b>" +
-    (who.contract ? " · " + esc(who.contract) : "") + " · longest run <b>" +
+    (reachAt(who).length ? " · " + esc(reachAt(who).join(" · ")) : "") +
+    " · longest run <b>" +
     num(stats.longest_run || 0) + "</b> days · " +
     esc(inst.shifts.map(shift => shift.name + " " +
       num((stats.by_shift || {})[shift.id] || 0)).join(" · ")) + "</p>" +
@@ -2075,13 +2129,6 @@ function firstType() {
   return first ? first[1][0].type : "";
 }
 
-function startDraft() {
-  const type = firstType();
-  if (!type) return;
-  state.draft = blankDraft(type);
-  render();
-}
-
 function editRule(id) {
   const found = state.instance.rules.filter(rule => rule.id === id)[0];
   if (!found) return;
@@ -2231,8 +2278,22 @@ async function savePerson() {
     return stop("Choose at least one role, or there is no duty this person could " +
                 "be given.");
   }
-  const person = { id: id, name: name || id, roles: edit.roles.slice(),
-                   contract: (edit.contract || "").trim() };
+  const phone = (edit.phone || "").trim();
+  const email = (edit.email || "").trim();
+  if (phone && !/^[+()\d][\s()\-.\d]{4,}$/.test(phone)) {
+    return stop("A contact number can hold digits and + - . ( ) and spaces, and " +
+                "needs at least five of them.");
+  }
+  if (email && !/^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(email)) {
+    return stop("That does not look like an email address — " +
+                "somebody@somewhere.example is the shape.");
+  }
+  const person = { id: id, name: name || id, roles: edit.roles.slice() };
+  if (phone || email) {
+    person.attributes = {};
+    if (phone) person.attributes.phone = phone;
+    if (email) person.attributes.email = email;
+  }
   const patch = { employees: edit.was
     ? inst.employees.map(one => one.id === edit.was ? person : one)
     : inst.employees.concat([person]) };
@@ -2327,11 +2388,34 @@ function pickWho(id) {
   render();
 }
 
+function takeWords(type) {
+  const card = typeCard(type);
+  if (!card || !card.example) return;
+  const held = state.memoText.replace(/\s+$/, "");
+  state.memoText = held ? held + "\n" + card.example : card.example;
+  state.readError = "";
+  render();
+  const box = document.querySelector('[data-set="memo"]');
+  if (box && box.setSelectionRange) {
+    box.focus();
+    box.setSelectionRange(state.memoText.length, state.memoText.length);
+  }
+  say("A wording to work from.", "Change the numbers, the shifts, the roles or " +
+      "the names until it says what your order says, then read it back.");
+}
+
+function clearMemo() {
+  state.memoText = "";
+  state.read = null;
+  state.readError = "";
+  render();
+}
+
 async function readMemo() {
   const text = state.memoText.trim();
   if (state.busy) return;
   if (!text) {
-    state.readError = "Paste the wording first, one rule to a line.";
+    state.readError = "Write the rules in first, one to a line.";
     render();
     return;
   }
@@ -2378,10 +2462,23 @@ function asRule(rule, seen) {
 
 async function takeDraft(line) {
   const found = proposalOn(line);
-  if (!found || !found.rule || state.busy) return;
+  if (!found || !found.rule || choosing(found) || state.busy) return;
   const rule = asRule(found.rule, taken());
   if (await commit({ rules: state.instance.rules.concat([rule]) },
                    "Accepted: " + rule.label)) {
+    forget(line);
+    render();
+  }
+}
+
+async function takeReading(line, at) {
+  const found = proposalOn(line);
+  if (!found || !choosing(found) || state.busy) return;
+  const one = found.readings[at];
+  if (!one || !one.rule) return;
+  const rule = asRule(one.rule, taken());
+  if (await commit({ rules: state.instance.rules.concat([rule]) },
+                   "Accepted, " + one.means + ": " + rule.label)) {
     forget(line);
     render();
   }
@@ -2636,15 +2733,19 @@ document.querySelector(".sheet").addEventListener("click", event => {
   if (doing === "go-staff") goTo("staff");
   if (doing === "check") runCheck();
   if (doing === "solve") runSolve();
-  if (doing === "add-rule") startDraft();
   if (doing === "cancel-rule") { state.draft = null; render(); }
   if (doing === "save-rule") saveRule();
   if (doing === "edit-rule") editRule(button.dataset.id);
   if (doing === "drop-rule") dropRule(button.dataset.id);
   if (doing === "undrop") undrop();
-  if (doing === "memo") { state.memo = !state.memo; render(); }
+  if (doing === "take-words") takeWords(button.dataset.id);
+  if (doing === "clear-memo") clearMemo();
   if (doing === "read-memo") readMemo();
   if (doing === "take-draft") takeDraft(Number(button.dataset.id));
+  if (doing === "take-reading") {
+    const said = String(button.dataset.id).split(":");
+    takeReading(Number(said[0]), Number(said[1]));
+  }
   if (doing === "take-all") takeAll();
   if (doing === "open-draft") slipFrom(Number(button.dataset.id));
   if (doing === "skip-draft") skipDraft(Number(button.dataset.id));

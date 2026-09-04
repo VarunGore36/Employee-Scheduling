@@ -259,6 +259,10 @@ def _print_drafts(out: dict) -> None:
         else:
             print(f"{draft['line']:>4}  --   ----  not read: {draft['problem']}")
         print(f"      | {draft['text']}")
+        for reading in draft.get("readings") or []:
+            other = reading["rule"]
+            print(f"      ? {reading['means']}: {other['type']}  "
+                  f"{_params_text(other)}")
         for note in draft["assumptions"]:
             print(f"      . {note}")
         for name in draft["suggestions"]:
