@@ -13,7 +13,7 @@ from roster.parse import (
     subject_of, weight_of,
 )
 from roster.rules import REGISTRY, RuleSet
-from roster.schema import HARD, SOFT, Instance, Rule
+from roster.schema import HARD, SOFT, Employee, Instance, Role, Rule, ShiftType
 
 # 2026-09-12 to 2026-10-12, 44 staff as E01..E44, shifts M/E/N, roles DSG/LSG/MTS.
 INST = university_instance()
@@ -219,6 +219,57 @@ class TestWhoTheRuleCovers(unittest.TestCase):
             self.assertIn("cannot be scoped", refused(text), text)
 
 
+class TestTheOfficesOwnCodesAndCadres(unittest.TestCase):
+    """Shifts coded by a single letter, and cadres the office names itself."""
+
+    # Shifts A/B/C, a Lady Guard cadre, Diana on its rolls.
+    CODED = replace(
+        INST, demand=[], rules=[],
+        roles=[Role("LG", "Lady Guard"), Role("MTS", "Multi Tasking Staff")],
+        shifts=[ShiftType("A", "Morning", 360, 480),
+                ShiftType("B", "Evening", 840, 480),
+                ShiftType("C", "Night", 1320, 480, True)],
+        employees=[Employee("E01", "Diana", ("LG",)),
+                   Employee("E02", "Faisal", ("MTS",))])
+
+    def test_a_shift_coded_by_one_letter_is_found_however_it_is_framed(self):
+        for text in ("At least 2 people must be on slot B every day.",
+                     "At least 2 people must be on shift B every day.",
+                     "At least 2 people must be on the B shift every day."):
+            self.assertEqual(read(text, self.CODED),
+                             ("headcount_per_shift", {"shift": "B", "min": 2}), text)
+
+    def test_a_lone_letter_is_a_shift_only_where_the_words_frame_it_as_one(self):
+        # "a" is a shift code in this office; the article must not become one.
+        self.assertEqual(read("Everyone must get a day off every week.", self.CODED),
+                         ("min_days_off_per_window", {"min": 1, "window": "calendar"}))
+        self.assertEqual(read("Nobody should be given a duty on their day off.",
+                              self.CODED),
+                         ("min_days_off_per_window", {"min": 1, "window": "calendar"}))
+
+    def test_a_cadre_the_office_carries_is_read_however_it_is_pluralised(self):
+        for text in ("Lady guards must not be put on the C shift.",
+                     "Lady guard staff must not be put on the C shift."):
+            draft = only(text, self.CODED)
+            self.assertEqual((draft.rule["type"], draft.rule["params"]),
+                             ("shift_type_count_range", {"shift": "C", "max": 0}), text)
+            self.assertEqual(draft.rule["scope"], {"kind": "roles", "ids": ["LG"]}, text)
+
+    def test_the_same_cadre_is_refused_where_the_office_has_no_such_group(self):
+        problem = refused("Lady guards must not be put on the night shift.")
+        self.assertIn("no 'lady' group", problem)
+        self.assertIn("cannot be scoped", problem)
+
+    def test_a_first_name_the_office_uses_reaches_that_persons_own_row(self):
+        draft = only("Diana must not work shift C.", self.CODED)
+        self.assertEqual(draft.rule["scope"], {"kind": "employees", "ids": ["E01"]})
+        self.assertEqual(draft.rule["params"], {"shift": "C", "max": 0})
+
+    def test_an_attribute_is_refused_even_where_a_shift_code_is_understood(self):
+        self.assertIn("cannot be scoped",
+                      refused("Women must not be given the C shift.", self.CODED))
+
+
 class TestDates(unittest.TestCase):
     """Every date form an Indian roster office actually writes."""
 
@@ -259,6 +310,41 @@ class TestDates(unittest.TestCase):
     def test_and_lists_dates_rather_than_bracketing_a_range(self):
         self.assertEqual(self.days("Staff 09 is on leave on the 1st and the 15th."),
                          ["2026-09-15", "2026-10-01"])
+
+    def test_a_range_reads_however_the_office_writes_the_two_ends(self):
+        whole = ["2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-19"]
+        for text in ("Staff 07 is on leave from 15 to 19 September.",
+                     "Staff 07 is on leave from the 15th to the 19th of September.",
+                     "Staff 07 is on leave 15-19 September.",
+                     "Staff 07 is on leave 15–19 September.",
+                     "Staff 07 is on leave from the 15th to the 19th.",
+                     "Staff 07 is on leave 15 September through 19 September."):
+            self.assertEqual(self.days(text), whole, text)
+
+    def test_a_list_of_days_sharing_one_month_keeps_every_day_in_it(self):
+        self.assertEqual(self.days("Staff 07 is on leave on 15 and 19 September."),
+                         ["2026-09-15", "2026-09-19"])
+        self.assertEqual(self.days("Staff 07 is on leave on 15, 16 and 19 September."),
+                         ["2026-09-15", "2026-09-16", "2026-09-19"])
+
+    def test_between_two_dates_means_the_days_between_them(self):
+        draft = only("Staff 07 is on leave between 15 and 19 September.")
+        self.assertEqual(draft.rule["params"]["days"],
+                         ["2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18",
+                          "2026-09-19"])
+        self.assertTrue(any("every day from" in note for note in draft.assumptions))
+
+    def test_between_two_figures_is_still_a_count_and_not_a_date_range(self):
+        self.assertEqual(read("Between 1 and 3 people must be on the night shift."),
+                         ("headcount_per_shift", {"shift": "N", "min": 1, "max": 3}))
+        self.assertEqual(read("At least 2 and no more than 4 nights in September."),
+                         ("max_night_shifts", {"max": 4}))
+
+    def test_a_range_written_backwards_is_refused_not_silently_swapped(self):
+        self.assertIn("runs backwards",
+                      refused("Staff 07 is away 19 to 15 September."))
+        self.assertIn("runs backwards",
+                      refused("Staff 07 is away between 19 and 15 September."))
 
     def test_a_weekday_name_becomes_every_such_day_in_the_period(self):
         draft = only("Contract staff cannot work Sundays.")
@@ -306,6 +392,14 @@ class TestLimitsOnOnePerson(unittest.TestCase):
                          ("max_consecutive_same_shift", {"max": 3, "shift": "N"}))
         self.assertEqual(read("Not more than 3 night shifts at a stretch."),
                          ("max_consecutive_same_shift", {"max": 3, "shift": "N"}))
+
+    def test_a_run_counted_in_duties_is_a_run_of_working_days(self):
+        for text in ("Nobody may work more than 5 shifts in a row.",
+                     "Nobody may work more than 5 slots in a row.",
+                     "Nobody may work more than 5 duties at a stretch.",
+                     "No more than 5 consecutive shifts."):
+            self.assertEqual(read(text),
+                             ("max_consecutive_working_days", {"max": 5}), text)
 
     def test_days_off_in_a_week(self):
         self.assertEqual(read("Everyone should get at least one weekly off."),

@@ -149,7 +149,7 @@ OFF_WORD = (r"(?:days?\s+off|off\s+days?|rest\s+days?|weekly\s+offs?|"
             r"(?<!hours )(?<!hrs )offs?|holidays?|breaks?)")
 PEOPLE = (r"(?:people|persons?|staff(?:\s+members?)?|employees?|workers?|"
           r"members?|hands|bodies|heads?)")
-SHIFT_WORD = r"(?:shifts?|duties|duty|turns?)"
+SHIFT_WORD = r"(?:shifts?|duties|duty|turns?|slots?|watch|relay)"
 HOUR_WORD = r"(?:hours?|hrs?)"
 COUNTED = (r"(?:hours?|hrs?|days?|shifts?|duties|duty|nights?|weekends?|offs?|"
            r"people|persons?|staff|turns?|breaks?|holidays?|leaves?|"
@@ -567,11 +567,22 @@ class Vocabulary:
             word for synonyms in CONTRACT_SYNONYMS.values()
             for word in synonyms if word not in known))
 
-    def _hits(self, text: str, table: list[tuple[str, str]]) -> list[tuple[int, str, str]]:
+    FRAMES = {
+        "shifts": (r"(?:shifts?|slots?|duty|duties|turn|watch|relay)\s+{w}\b|"
+                   r"\b{w}\s+(?:shifts?|slots?|duty|duties|turn|watch|relay)\b"),
+        "roles": (r"(?:roles?|grades?|cadres?|categor(?:y|ies)|posts?|rank)\s+{w}\b|"
+                  r"\b{w}\s+(?:staff|hands?|roles?|grades?|cadres?)\b"),
+        "employees": r"(?:staff|employee|worker|member|person)\s+{w}\b",
+        "contracts": r"(?:staff|employee|worker|member|person)\s+{w}\b",
+    }
+
+    def _hits(self, text: str, table: list[tuple[str, str]],
+              kind: str = "employees") -> list[tuple[int, str, str]]:
         out = []
+        plural = "" if kind == "employees" else r"(?:s|es)?"
         for word, ident in table:
-            pattern = (rf"(?:staff|employee|worker|member|person)\s+{re.escape(word)}\b"
-                       if len(word) == 1 else rf"\b{re.escape(word)}\b")
+            pattern = (self.FRAMES[kind].format(w=re.escape(word)) if len(word) == 1
+                       else rf"\b{re.escape(word)}{plural}\b")
             for found in re.finditer(pattern, text):
                 out.append((found.start(), ident, word))
         return sorted(out)
@@ -590,7 +601,7 @@ class Vocabulary:
         for table, field_name in ((self.shifts, "shifts"), (self.roles, "roles"),
                                   (self.employees, "employees"),
                                   (self.contracts, "contracts")):
-            hits = self._hits(text, table)
+            hits = self._hits(text, table, field_name)
             getattr(found, field_name).extend(self._ordered(hits))
             found.words.extend(word for _, _, word in hits)
         return found
@@ -614,8 +625,13 @@ WEEKDAY_FULL = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
 
 DATE_PATTERNS = (
     ("range_month", re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s*"
-                               rf"(?:-|to|till|untill?)\s*(\d{{1,2}})"
+                               rf"(?:-|–|—|to|till|untill?|through|thru)\s*"
+                               rf"(?:the\s+)?(\d{{1,2}})"
                                rf"(?:st|nd|rd|th)?\s+(?:of\s+)?({MONTH_TOKEN})\b")),
+    ("day_list", re.compile(rf"\b((?:\d{{1,2}}(?:st|nd|rd|th)?\s*"
+                            rf"(?:,\s*|\s+and\s+|\s*&\s*)(?:the\s+)?)+)"
+                            rf"(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?"
+                            rf"({MONTH_TOKEN})\b")),
     ("iso", re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b")),
     ("dmy", re.compile(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b")),
     ("dmy", re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(\d{2,4})\b")),
@@ -625,7 +641,9 @@ DATE_PATTERNS = (
     ("ordinal", re.compile(r"\b(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b")),
     ("weekday", re.compile(rf"\b({WEEKDAY_ALT})s?\b")),
 )
-RANGE_JOIN = re.compile(r"^\s*(?:-|to|till|untill?|up ?to|through|thru)\s*$")
+RANGE_JOIN = re.compile(r"^\s*(?:-|–|—|to|till|untill?|up ?to|through|thru)"
+                        r"\s*(?:the\s+)?$")
+BETWEEN_FIRST = re.compile(r"\bbetween\s+(?:the\s+)?$", re.I)
 FOR_DAYS = re.compile(rf"\bfor\s+{N}\s+(?:days?|nights?)\b")
 
 
@@ -719,6 +737,19 @@ def _resolve(kind: str, match: re.Match, horizon: Horizon | None,
         notes.append(f"{said} was read as every day from {first.isoformat()} "
                      f"to {last.isoformat()}")
         return span, [], ""
+    if kind == "day_list":
+        month = MONTHS[match.group(3)]
+        if horizon is None:
+            return [], [], _no_period(said)
+        wanted = [int(one) for one in re.findall(r"\d{1,2}", match.group(1))]
+        wanted.append(int(match.group(2)))
+        out = []
+        for day in wanted:
+            found = _pick_year(month, day, horizon, notes)
+            if not found:
+                return [], [], f"{said} is not a real date"
+            out.append(found)
+        return out, [], ""
     if kind == "ordinal":
         day = int(match.group(1))
         if horizon is None:
@@ -755,6 +786,19 @@ def scan_dates(text: str, horizon: Horizon | None) -> DateScan:
         if problem:
             scan.problem = problem
             return scan
+        if (kind == "day_list" and len(days) == 2
+                and BETWEEN_FIRST.search(text[:start])):
+            first, last = days
+            if last < first:
+                scan.problem = (f"{first.isoformat()} to {last.isoformat()} "
+                                f"runs backwards")
+                return scan
+            days = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+            scan.notes.append(f"'between {first.day} and {last.day}' was read as every "
+                              f"day from {first.isoformat()} to {last.isoformat()}")
+        elif kind == "day_list":
+            scan.notes.append(match.group(0).strip() + " was read as the days "
+                              + ", ".join(one.isoformat() for one in days))
         parts.append((start, end, days, weekdays))
 
     days: list[date] = []
@@ -1287,7 +1331,7 @@ class Parser:
         if (not re.search(rf"{RUN}|{ADJ_RUN}", ctx.pattern) and not alone
                 and not re.search(self.BREAK_AFTER, ctx.pattern)):
             return None
-        if not re.search(rf"\b{DAY_WORD}\b|\bstretch\b", ctx.pattern):
+        if not re.search(rf"\b{DAY_WORD}\b|\bstretch\b|\b{SHIFT_WORD}\b", ctx.pattern):
             return None
         if re.search(rf"\b\d+(?:\.\d+)?\s+{OFF_WORD}\b", ctx.pattern) and not re.search(
                 r"\bworking days?\b|\bwork days?\b|\bduty days?\b|"

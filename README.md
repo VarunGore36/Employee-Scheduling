@@ -192,7 +192,7 @@ The first command solves the built-in month and prints the roster grid, the
 per-person workload and the rule report. The second lists every rule type the
 engine understands. The third reads rules written as prose into draft rules, and
 takes them as arguments, from a file with `--file`, or on standard input. The
-fourth starts the API. The last runs the test suite — 422 tests, about a minute —
+fourth starts the API. The last runs the test suite — 434 tests, about a minute —
 and the `-t .` is required.
 
 With the server up, open <http://127.0.0.1:8000/> for the admin's page. It is three
@@ -248,11 +248,22 @@ unless it really builds against the instance, so a draft the admin confirms
 cannot fail later. "Nobody may work more than 6 days in a row and no more than 48
 hours a week" comes back as two rules with a note saying the line was split.
 "Staff 07 is on leave from 15 to 19 September" resolves the person and expands
-the dates.
+the dates. Dates are read the way an office writes them: `2026-09-15`, `18/09/2026`,
+`23.09.2026`, "15 September", "the 20th", a range as "15 to 19 September", "15-19
+September", "from the 15th to the 19th of September" or "between 15 and 19 September",
+a list as "15, 16 and 19 September", "for 4 days from the 22nd", and a weekday name as
+every such day in the period. A range written backwards is refused rather than quietly
+swapped, and "between 1 and 3 people" is still a headcount — only a date-shaped pair
+becomes a range.
 
 Where a sentence cannot be held honestly, it is refused with the reason rather
 than guessed at: a group that is not in the staff data, a staff number nobody
 has, a date outside the month, a daily hours cap that is really a shift length.
+A sentence that sorts people by a personal attribute — gender, seniority, age,
+religion, caste, marital status, a health condition — is refused for the same
+reason, because the staff records carry no such field: a rule can cover named
+staff, a role, a contract type, or everyone. Where the office has defined the
+group as a cadre of its own, that cadre is a role and the rule lands on it.
 A dozen refusals of this kind are covered by tests. The drafts are the admin's to
 accept, edit or drop — the structured rules stay the single source of truth. On the
 page they arrive as proposals on step four, and a ten-line circular put through the
@@ -274,6 +285,17 @@ promises hold throughout: a sentence that names a number is never read as a tota
 ban, and anything the reading could not keep is reported as an assumption instead of
 disappearing — a floor on working days in a week, for instance, is not a rule type,
 so the ceiling is taken and the floor is named as dropped.
+
+Shifts and cadres are named the way the office names them. A duty may be called a
+shift, a slot, a duty, a turn, a watch or a relay, and a run of them — "5 shifts in
+a row", "5 slots in a row", "5 duties at a stretch" — is a run of working days,
+while "3 night shifts in a row" stays a run of that one shift. An office that codes
+its shifts by a single letter is understood as long as the words frame the letter as
+one: "slot B", "shift B" and "the B shift" all find shift B, while the article in
+"a day off" does not, even in an office whose morning shift is coded A. A cadre is
+matched however it is pluralised, so "lady guards" reaches a Lady Guard role the
+office has actually defined — and where no such group is on the staff records the
+same sentence is refused rather than widened to everybody.
 
 A rule that could never be satisfied is refused wherever it comes from — prose, a
 correction made on the page, or a hand-written instance. Every parameter is held to
